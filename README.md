@@ -49,3 +49,12 @@ reported from A's perspective.
 - `src/kaggriculture/runner.py` — one episode -> {seed, banks, winner, turns}
 - `src/kaggriculture/harness.py` — paired benchmark over seeds, both seats
 - `src/kaggriculture/agents/baseline.py` — `baseline_v0` policy
+
+## Reference data
+
+`data/` is git-ignored. Re-fetch with:
+
+```bash
+.venv/bin/kaggle datasets download raykkretzschmar/kaggriculture-reference-agents -p data/reference-agents --unzip
+.venv/bin/kaggle datasets download dariushafshar/kaggriculture-engine-reference-tables -p data/engine-tables --unzip
+```

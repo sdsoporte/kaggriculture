@@ -1,6 +1,0 @@
-crop,seed_cost,first_yield_day,max_yield_day,interval,max_yield,ongoing,market_base_price
-WHEAT,10,2,4,0,6,False,25
-CARROT,20,2,3,0,4,False,35
-TOMATO,50,8,8,1,4,True,60
-STRAWBERRY,100,10,10,2,4,True,120
-MELON,80,10,12,0,6,False,250
