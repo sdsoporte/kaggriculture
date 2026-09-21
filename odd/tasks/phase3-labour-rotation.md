@@ -61,4 +61,4 @@ frozen control, not a file to mutate.
 - C1: plan committed as `1c074bf`; branch `feat/phase3-labour-rotation`; standard checks selected explicitly by the user, runner `.venv/bin/python -m pytest tests/ -q`.
 - C2: `src/kaggriculture/agents/baseline_v2.py` added; import-free, preserves v1 wheat loop, targets four hands, orders `SELL → HIRE → BUY_SEED`, and returns one PASS per visible hand.
 - C2 verification: `.venv/bin/python -m pytest tests/ -q` → 3 passed; local seed-0 match completed 719 turns and beat Fallow Finn 6832–3000; trace confirmed four HIRE orders then four visible hands with PASS actions.
-- C2 commit: parent will record the work-unit commit after this documentation update.
+- C2 commit: `67c532d` feat: baseline_v2 — four-hand hiring skeleton. Native review lineage `review-9e75ead7349d48b3` approved and acknowledged; R3-001/R3-002 warnings and R3-003 suggestion were non-blocking informational findings.
