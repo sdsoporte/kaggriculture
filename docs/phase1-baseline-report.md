@@ -85,3 +85,36 @@ for f in data/reference-agents/*.py; do
   .venv/bin/python scripts/benchmark.py src/kaggriculture/agents/baseline.py "$f" --seeds 4
 done
 ```
+
+---
+
+## Update 2026-09-21 PM — `baseline_v1` re-places the agent at tier 1
+
+Two changes, each verified paired before the next was made:
+
+- **v1a — field capacity cap** (`FIELD_CAP = 5`): never plant beyond 5 live
+  plants. Sharp optimum: cap 6 loses to Walter (−425), cap 7 loses (−712),
+  cap 5 wins all 8 games. Commit `7098410`.
+- **v1b — harvest outranks watering** for mature tiles: with the cap there
+  is enough daily slack that harvest-first never costs a plant.
+
+Ladder with `baseline_v1` (paired, 4 seeds × 2 seats, same method as above):
+
+| Tier | Agent | W–L | Mean margin | Δ vs v0 |
+| --- | --- | --- | --- | --- |
+| 0 | fallow_finn | 8–0 | **+4,476** | +2,345 |
+| 1 | wheat_walter | 8–0 | **+558** | +2,366 |
+| 2 | rotation_rosa | 0–8 | −5,247 | +1,350 |
+| 3 | homestead_hana | 0–8 | −10,430 | +139 |
+| 4 | melon_mateo | 0–8 | −12,942 | +3,235 |
+| 5 | rancher_rita | 0–8 | −31,883 | +13,093 |
+| 6–9 | meta line | 0–8 | ≈ −126k to −142k | — |
+
+`baseline_v1` banks ~7,400–7,500 and owns tier 1. The gate to tier 2 is
+exactly what Rosa's manifest entry says: **hired labour** (4 hands ≈ 7
+coins/day for 5× the action budget) plus a multi-crop rotation. That is the
+next feature, not a tweak of v1.
+
+Pipeline note: `submissions/main_v0.py` (v0 content) was submitted to Kaggle
+and completed remotely (public score 481.0) — packaging and the remote
+sandbox are validated; future submissions are pure policy swaps.
