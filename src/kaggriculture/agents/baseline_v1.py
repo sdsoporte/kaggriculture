@@ -105,12 +105,15 @@ def _field_op(obs, me, priv):
         for p in empties[: min(seeds, room)]:
             plant.append((p, ["PLANT", "WHEAT"]))
 
-    # Urgency: watering first (two missed days in a row kills the plant),
-    # then harvest, then carry produce to the shed, then planting.
-    if water:
-        target, op = _pick_job(water, pos)
-    elif harvest:
+    # Urgency (v1b): mature harvest first (yield is perishable only in the
+    # sense that the tile frees late), then watering (two missed days in a
+    # row kills the plant), then carry produce to the shed, then planting.
+    # With FIELD_CAP=5 there is enough daily slack that harvest-first never
+    # costs a plant, and it shortens the harvest->sell pipeline.
+    if harvest:
         target, op = _pick_job(harvest, pos)
+    elif water:
+        target, op = _pick_job(water, pos)
     elif carrying > 0:
         target, op = SHED_TILE, ["DROP"]
     elif plant:
