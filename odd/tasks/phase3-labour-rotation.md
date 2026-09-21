@@ -47,7 +47,7 @@ frozen control, not a file to mutate.
 - [x] C3. Implement compact multi-unit crop/logistics scheduler
 - [x] C4. Add wheat/carrot/tomato rotation and crop-aware sales
 - [x] C5. Run paired controls + full ladder; record tier placement in `docs/`
-- [ ] C6. Prepare `submissions/main_v2.py`; request explicit upload decision
+- [x] C6. Prepare `submissions/main_v2.py`; request explicit upload decision
 
 ## Non-goals
 
@@ -80,6 +80,9 @@ frozen control, not a file to mutate.
 - C5 warning: the optional `pyspiel` warning was non-blocking.
 - C5 report: `docs/phase3-baseline-v2-report.md`.
 - C5 upload control: no Kaggle upload was made.
+- C6 artifacts: `submissions/main_v2.py` is byte-equivalent to `baseline_v2.py` (SHA-256 `45526a579c89fd25b97c4a7fb475f88dfb0195995cb01d51d0011faad3841521`); `submissions/main_v1.py` is byte-equivalent to `baseline_v1.py` (SHA-256 `a8744c892e6388d7e6f78b688366a79573a16d96b6ecfa1fddc4ab11a55cca6e`). Both are import-free single-file agents exposing `agent(obs)`.
+- C6 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 17.46s`; v2 seed-0 smoke → `719 turns`, A `10371`, B `3000`; v1 fallback seed-0 smoke → `719 turns`, A `7042`, B `3000`. Optional `pyspiel` warning remained non-blocking.
+- C6 upload gate: no Kaggle upload was invoked. Explicit decision remains: upload v2, upload validated v1 fallback, or defer.
 
 ## Key Learnings
 
