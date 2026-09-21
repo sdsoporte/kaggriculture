@@ -22,6 +22,10 @@ frozen control, not a file to mutate.
   opponent fingerprinting in this feature.
 - Every policy increment is judged with paired benchmarks (same seeds, both
   seats); no unpaired ladder claims.
+- TDD mode: **standard checks**, resolved by explicit user choice in this Pi
+  session (`standard`); strict TDD is not active. Functional test runner:
+  `.venv/bin/python -m pytest tests/ -q`. Agent smoke and paired evidence use
+  `scripts/run_match.py` and `scripts/benchmark.py` separately.
 
 ## Acceptance criteria
 
@@ -38,8 +42,8 @@ frozen control, not a file to mutate.
 
 ## Tasks
 
-- [ ] C1. Freeze controls, acceptance criteria, and v2 architecture
-- [ ] C2. Implement four-hand hiring and market budget ordering
+- [x] C1. Freeze controls, acceptance criteria, and v2 architecture
+- [x] C2. Implement four-hand hiring and market budget ordering
 - [ ] C3. Implement compact multi-unit crop/logistics scheduler
 - [ ] C4. Add wheat/carrot/tomato rotation and crop-aware sales
 - [ ] C5. Run paired controls + full ladder; record tier placement in `docs/`
@@ -54,4 +58,7 @@ frozen control, not a file to mutate.
 
 ## Evidence
 
-- (commits recorded per task)
+- C1: plan committed as `1c074bf`; branch `feat/phase3-labour-rotation`; standard checks selected explicitly by the user, runner `.venv/bin/python -m pytest tests/ -q`.
+- C2: `src/kaggriculture/agents/baseline_v2.py` added; import-free, preserves v1 wheat loop, targets four hands, orders `SELL → HIRE → BUY_SEED`, and returns one PASS per visible hand.
+- C2 verification: `.venv/bin/python -m pytest tests/ -q` → 3 passed; local seed-0 match completed 719 turns and beat Fallow Finn 6832–3000; trace confirmed four HIRE orders then four visible hands with PASS actions.
+- C2 commit: parent will record the work-unit commit after this documentation update.
