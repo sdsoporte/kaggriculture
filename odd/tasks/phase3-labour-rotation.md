@@ -45,7 +45,7 @@ frozen control, not a file to mutate.
 - [x] C1. Freeze controls, acceptance criteria, and v2 architecture
 - [x] C2. Implement four-hand hiring and market budget ordering
 - [x] C3. Implement compact multi-unit crop/logistics scheduler
-- [ ] C4. Add wheat/carrot/tomato rotation and crop-aware sales
+- [x] C4. Add wheat/carrot/tomato rotation and crop-aware sales
 - [ ] C5. Run paired controls + full ladder; record tier placement in `docs/`
 - [ ] C6. Prepare `submissions/main_v2.py`; request explicit upload decision
 
@@ -70,6 +70,10 @@ frozen control, not a file to mutate.
 - C3 trace: four HIREs at turn 0, four visible hands at turn 1, max 20 live plants, loaded units excluded from field assignment; optional `pyspiel` warning was non-blocking.
 - C3 work-unit commit: `fbf16d7` feat: baseline_v2 — compact multi-unit wheat scheduler.
 - C3 7–1 analysis against v1: per-seed margins (v2 perspective) were seed 0 `+51/+51`, seed 1 `+604/+102`, seed 2 `+165/+165`, and seed 3 `−118/+367` for seats 0/1. The only loss is seed 3 with v2 in seat 0; reversing seats on that seed wins by +367. Aggregate seat means are nearly symmetric (`+175.5` vs `+171.2`, difference 4.3), so the result supports a positive fixed four-seed control but not universal superiority or statistical significance. The separate Walter control remains 8–0 at `+466.6`, below v1's prior `+557.9`; C3 improves the direct v1 matchup but its larger field/water-first logistics still need crop-aware tuning in C4.
+- C4 implementation: crop-aware WHEAT/CARROT/TOMATO readiness, 10/6/4 field targets, unique reserved plant jobs, crop sales in `TOMATO → CARROT → WHEAT` order, and reactive sale timing when shared price falls below 90% of base or shed pressure reaches 70. The dynamic signal addresses the live top-game finding that final carrot price can crash under synchronized tape liquidation; it is not opponent fingerprinting.
+- C4 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 17.43s`; seed-0 smoke → `719 turns`, A bank `10371`, B bank `3000`.
+- C4 paired controls: v2 vs v1 `8–0`, mean margin `+1442.9`; v2 vs Walter `8–0`, mean margin `+2004.2`; v2 vs Rosa `0–8`, mean margin `−2498.1`. Sale probe: early low carrot price → quantity `3`, healthy price/low shed → `0`, day 28 → `3`. The optional `pyspiel` warning remained non-blocking.
+- C4 work-unit commit: parent will record the commit after this documentation update; C5 remains the full ladder and tier-placement gate.
 
 ## Key Learnings
 
