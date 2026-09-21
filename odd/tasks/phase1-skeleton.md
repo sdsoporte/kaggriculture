@@ -11,13 +11,18 @@ Decisions:
 
 ## Tasks
 
-- [ ] Setup Python env + kaggle CLI, verify API access
-- [ ] Download competition kit + reference agents + engine tables
-- [ ] Inspect kit: obs/action contract, simulator, submission rules
-- [ ] Project skeleton: package layout + baseline agent
-- [ ] Paired-benchmark harness (same seed/seat/opponent)
-- [ ] Baseline run vs reference agents + report
+- [x] Setup Python env + kaggle CLI, verify API access
+- [x] Download competition kit + reference agents + engine tables
+- [x] Inspect kit: obs/action contract, simulator, submission rules
+- [x] Project skeleton: package layout + baseline agent
+- [x] Paired-benchmark harness (same seed/seat/opponent)
+- [x] Baseline run vs reference agents + report
 
 ## Evidence
 
-- (commits to be recorded per task)
+- b24e022 feat: phase-1 skeleton — paired-benchmark harness, runner, loader, baseline v0
+- Report: `docs/phase1-baseline-report.md` — baseline_v0 lands between tier 0
+  and tier 1 (beats fallow_finn +2131, loses to wheat_walter −1808, 8 games
+  each, paired). Diagnosis: over-planting, seed-money bleed, water-first
+  starvation → only ~4 productive plants. Phase 2 levers: cap field to
+  service capacity, harvest>water urgency, then hired labour.
