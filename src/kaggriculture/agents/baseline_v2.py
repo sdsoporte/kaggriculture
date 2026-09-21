@@ -1,8 +1,8 @@
-"""Kaggriculture baseline_v2, C2: four-hand labour ordering.
+"""Kaggriculture baseline_v2, C3: four-hand wheat scheduling.
 
-This slice preserves baseline_v1's validated wheat loop. Hands are
-intentionally PASS-only until C3 adds the multi-unit scheduler; the later C4
-slice can extend the same compact policy with three-crop rotation.
+This slice preserves C2's market ordering while giving the farmer and every
+visible hand independent wheat field and drop jobs. C4 will add crop-aware
+readiness and the three-crop policy.
 
 The module is self-contained and import-free so it can be submitted directly
 as a Kaggriculture agent.
@@ -19,7 +19,7 @@ LIQUIDATE_FROM_DAY = 28
 SELL_CHUNK = 10
 SEED_STOCK = 8
 SEED_BATCH = 4
-FIELD_CAP = 5
+WHEAT_SERVICE_CAP = 20  # C4 can tune this when it adds crop shares.
 TARGET_HANDS = 4
 
 MOVE_OP = {(0, -1): "NORTH", (0, 1): "SOUTH", (1, 0): "EAST", (-1, 0): "WEST"}
@@ -53,57 +53,78 @@ def _open_tiles(tiles):
 
 
 def _plants(tiles):
-    """Return all plant tiles as ``(position, tile)`` pairs."""
+    """Return wheat plant tiles as ``(position, tile)`` pairs."""
     out = []
     for y in range(BOARD):
         for x in range(BOARD):
             tile = tiles[y][x]
-            if isinstance(tile, dict) and tile.get("kind") == "PLANT":
+            if (
+                isinstance(tile, dict)
+                and tile.get("kind") == "PLANT"
+                and tile.get("crop", "WHEAT") == "WHEAT"
+            ):
                 out.append(((x, y), tile))
     return out
 
 
-def _pick_job(jobs, pos):
-    """Select the nearest job, with deterministic board-order tie breaking."""
-    jobs = sorted(jobs, key=lambda j: (_dist(pos, j[0]), j[0][1], j[0][0]))
-    return jobs[0]
-
-
-def _field_op(obs, me, priv):
-    """Choose the main farmer's baseline_v1 wheat operation."""
+def _collect_jobs(obs, me, priv):
+    """Collect one deterministic wheat job per useful tile for this turn."""
     day = obs["day"]
-    tiles = me["tiles"]
-    pos = tuple(me["farmer"])
-    inv = priv["inventories"][0] if priv["inventories"] else {}
-    carrying = inv.get("WHEAT", 0)
+    water, harvest = [], []
+    for pos, tile in _plants(me["tiles"]):
+        # Keep one job per tile: mature wheat is harvested before ordinary
+        # watering, while younger unwatered wheat is watered first.
+        if (
+            tile.get("yield_units", 0) > 0
+            and day - tile.get("planted_day", day) >= WHEAT_MAX_DAY
+        ):
+            harvest.append((pos, ["HARVEST"]))
+        elif not tile.get("watered_today", False):
+            water.append((pos, ["WATER"]))
 
-    water, harvest, plant = [], [], []
-    for p, tile in _plants(tiles):
-        if not tile["watered_today"]:
-            water.append((p, ["WATER"]))
-        elif tile["yield_units"] > 0 and day - tile["planted_day"] >= WHEAT_MAX_DAY:
-            harvest.append((p, ["HARVEST"]))
+    seeds = priv.get("seeds", {}).get("WHEAT", 0)
+    room = max(0, WHEAT_SERVICE_CAP - len(_plants(me["tiles"])))
+    plant = []
+    if day <= PLANT_UNTIL_DAY:
+        plant = [
+            (pos, ["PLANT", "WHEAT"])
+            for pos in _open_tiles(me["tiles"])[: min(seeds, room)]
+        ]
 
-    seeds = priv["seeds"].get("WHEAT", 0)
-    empties = _open_tiles(tiles)
-    room = FIELD_CAP - len(_plants(tiles))
-    if day <= PLANT_UNTIL_DAY and seeds > 0 and empties and room > 0:
-        for p in empties[:min(seeds, room)]:
-            plant.append((p, ["PLANT", "WHEAT"]))
+    # Preserve the v1 urgency order while C4 adds crop-aware readiness.
+    return harvest + water + plant
 
-    # Preserve v1's priority: mature harvest, watering, carry to shed, plant.
-    if harvest:
-        target, op = _pick_job(harvest, pos)
-    elif water:
-        target, op = _pick_job(water, pos)
-    elif carrying > 0:
-        target, op = SHED_TILE, ["DROP"]
-    elif plant:
-        target, op = _pick_job(plant, pos)
-    else:
-        return ["PASS"]
 
-    return op if pos == target else _step_toward(pos, target)
+def _assign_jobs(me, priv, jobs):
+    """Assign jobs to nearest free units and return one action per unit."""
+    positions = [tuple(me["farmer"])] + [tuple(p) for p in me["hands"]]
+    inventories = priv.get("inventories", [])
+    actions = [["PASS"] for _ in positions]
+    busy = [False] * len(positions)
+
+    # Carrying wheat is always a higher priority than another field operation.
+    for index, pos in enumerate(positions):
+        inventory = inventories[index] if index < len(inventories) else {}
+        if inventory.get("WHEAT", 0) <= 0:
+            continue
+        busy[index] = True
+        actions[index] = ["DROP"] if pos == SHED_TILE else _step_toward(pos, SHED_TILE)
+
+    # Each job is consumed once, and each unit receives at most one action.
+    for target, operation in jobs:
+        candidates = [i for i, used in enumerate(busy) if not used]
+        if not candidates:
+            break
+        index = min(candidates, key=lambda i: (_dist(positions[i], target), i))
+        busy[index] = True
+        actions[index] = operation if positions[index] == target else _step_toward(positions[index], target)
+
+    return actions
+
+
+def _multi_unit_scheduler(obs, me, priv):
+    """Schedule the farmer and every visible hand for wheat and logistics."""
+    return _assign_jobs(me, priv, _collect_jobs(obs, me, priv))
 
 
 def _market_orders(obs, me, priv):
@@ -123,10 +144,10 @@ def _market_orders(obs, me, priv):
         for _ in range(min(missing, TARGET_HANDS)):
             orders.append(["HIRE"])
 
-    # Keep v1's seed budget and field-cap policy after the labour orders.
+    # Keep v1's seed budget and planting cutoff after the labour orders.
     if day <= PLANT_UNTIL_DAY:
         seeds = priv["seeds"].get("WHEAT", 0)
-        room = FIELD_CAP - len(_plants(me["tiles"]))
+        room = WHEAT_SERVICE_CAP - len(_plants(me["tiles"]))
         gap = min(SEED_STOCK - seeds, SEED_BATCH, room)
         if gap > 0 and me["money"] >= WHEAT_SEED_PRICE * gap:
             orders.append(["BUY_SEED", "WHEAT", gap])
@@ -138,9 +159,9 @@ def agent(obs):
     """Kaggriculture entry point."""
     me = obs["farms"][obs["player"]]
     priv = obs["private"]
+    actions = _multi_unit_scheduler(obs, me, priv)
     return {
-        "farmer": _field_op(obs, me, priv),
-        # C3 extension point: replace these PASS actions with hand jobs.
-        "hands": [["PASS"] for _ in me["hands"]],
+        "farmer": actions[0],
+        "hands": actions[1:],
         "market": _market_orders(obs, me, priv),
     }

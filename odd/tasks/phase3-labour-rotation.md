@@ -44,7 +44,7 @@ frozen control, not a file to mutate.
 
 - [x] C1. Freeze controls, acceptance criteria, and v2 architecture
 - [x] C2. Implement four-hand hiring and market budget ordering
-- [ ] C3. Implement compact multi-unit crop/logistics scheduler
+- [x] C3. Implement compact multi-unit crop/logistics scheduler
 - [ ] C4. Add wheat/carrot/tomato rotation and crop-aware sales
 - [ ] C5. Run paired controls + full ladder; record tier placement in `docs/`
 - [ ] C6. Prepare `submissions/main_v2.py`; request explicit upload decision
@@ -62,3 +62,16 @@ frozen control, not a file to mutate.
 - C2: `src/kaggriculture/agents/baseline_v2.py` added; import-free, preserves v1 wheat loop, targets four hands, orders `SELL → HIRE → BUY_SEED`, and returns one PASS per visible hand.
 - C2 verification: `.venv/bin/python -m pytest tests/ -q` → 3 passed; local seed-0 match completed 719 turns and beat Fallow Finn 6832–3000; trace confirmed four HIRE orders then four visible hands with PASS actions.
 - C2 commit: `67c532d` feat: baseline_v2 — four-hand hiring skeleton. Native review lineage `review-9e75ead7349d48b3` approved and acknowledged; R3-001/R3-002 warnings and R3-003 suggestion were non-blocking informational findings.
+- C3: `src/kaggriculture/agents/baseline_v2.py` now uses `WHEAT_SERVICE_CAP=20`, deterministic nearest-unit single-use jobs, loaded-unit DROP routing before field work, and one action per farmer/visible hand; C2 hire/order behavior remains intact.
+- C3 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 17.40s`.
+- C3 smoke: `.venv/bin/python scripts/run_match.py src/kaggriculture/agents/baseline_v2.py data/reference-agents/fallow_finn.py --seed 0` → `719 turns`, A bank `7866`, B bank `3000`.
+- C3 paired v1 control: `.venv/bin/python scripts/benchmark.py src/kaggriculture/agents/baseline_v2.py src/kaggriculture/agents/baseline_v1.py --seeds 4` → `7-1`, mean margin `+173.4` (seat0 `+175.5`, seat1 `+171.2`).
+- C3 paired Walter control: same benchmark command against `data/reference-agents/wheat_walter.py` → `8-0`, mean margin `+466.6` (seat0 `+385.2`, seat1 `+548.0`).
+- C3 trace: four HIREs at turn 0, four visible hands at turn 1, max 20 live plants, loaded units excluded from field assignment; optional `pyspiel` warning was non-blocking.
+- C3 commit: parent will record the work-unit commit after this documentation update.
+
+## Key Learnings
+
+1. C3 combines bounded wheat capacity with deterministic nearest-unit single-use scheduling.
+2. Loaded units must be dropped before field assignment, while each farmer and visible hand receives one action.
+3. The recorded verification, smoke run, and paired controls provide the C3 evidence without closing C4-C6.
