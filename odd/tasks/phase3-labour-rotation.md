@@ -68,7 +68,8 @@ frozen control, not a file to mutate.
 - C3 paired v1 control: `.venv/bin/python scripts/benchmark.py src/kaggriculture/agents/baseline_v2.py src/kaggriculture/agents/baseline_v1.py --seeds 4` → `7-1`, mean margin `+173.4` (seat0 `+175.5`, seat1 `+171.2`).
 - C3 paired Walter control: same benchmark command against `data/reference-agents/wheat_walter.py` → `8-0`, mean margin `+466.6` (seat0 `+385.2`, seat1 `+548.0`).
 - C3 trace: four HIREs at turn 0, four visible hands at turn 1, max 20 live plants, loaded units excluded from field assignment; optional `pyspiel` warning was non-blocking.
-- C3 commit: parent will record the work-unit commit after this documentation update.
+- C3 work-unit commit: `fbf16d7` feat: baseline_v2 — compact multi-unit wheat scheduler.
+- C3 7–1 analysis against v1: per-seed margins (v2 perspective) were seed 0 `+51/+51`, seed 1 `+604/+102`, seed 2 `+165/+165`, and seed 3 `−118/+367` for seats 0/1. The only loss is seed 3 with v2 in seat 0; reversing seats on that seed wins by +367. Aggregate seat means are nearly symmetric (`+175.5` vs `+171.2`, difference 4.3), so the result supports a positive fixed four-seed control but not universal superiority or statistical significance. The separate Walter control remains 8–0 at `+466.6`, below v1's prior `+557.9`; C3 improves the direct v1 matchup but its larger field/water-first logistics still need crop-aware tuning in C4.
 
 ## Key Learnings
 
