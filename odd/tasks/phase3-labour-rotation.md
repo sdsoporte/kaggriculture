@@ -82,7 +82,7 @@ frozen control, not a file to mutate.
 - C5 upload control: no Kaggle upload was made.
 - C6 artifacts: `submissions/main_v2.py` is byte-equivalent to `baseline_v2.py` (SHA-256 `45526a579c89fd25b97c4a7fb475f88dfb0195995cb01d51d0011faad3841521`); `submissions/main_v1.py` is byte-equivalent to `baseline_v1.py` (SHA-256 `a8744c892e6388d7e6f78b688366a79573a16d96b6ecfa1fddc4ab11a55cca6e`). Both are import-free single-file agents exposing `agent(obs)`.
 - C6 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 17.46s`; v2 seed-0 smoke → `719 turns`, A `10371`, B `3000`; v1 fallback seed-0 smoke → `719 turns`, A `7042`, B `3000`. Optional `pyspiel` warning remained non-blocking.
-- C6 upload gate: no Kaggle upload was invoked. Explicit decision remains: upload v2, upload validated v1 fallback, or defer.
+- C6 upload gate: user explicitly selected v2. Kaggle submission `56445327` was accepted with description `phase3 v2: four hands, wheat-carrot-tomato rotation, reactive sales`; after the first status poll it remains `SubmissionStatus.PENDING` with no score. Do not claim remote completion until Kaggle reports a terminal status.
 
 ## Key Learnings
 
