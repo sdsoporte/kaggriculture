@@ -46,7 +46,7 @@ frozen control, not a file to mutate.
 - [x] C2. Implement four-hand hiring and market budget ordering
 - [x] C3. Implement compact multi-unit crop/logistics scheduler
 - [x] C4. Add wheat/carrot/tomato rotation and crop-aware sales
-- [ ] C5. Run paired controls + full ladder; record tier placement in `docs/`
+- [x] C5. Run paired controls + full ladder; record tier placement in `docs/`
 - [ ] C6. Prepare `submissions/main_v2.py`; request explicit upload decision
 
 ## Non-goals
@@ -73,10 +73,18 @@ frozen control, not a file to mutate.
 - C4 implementation: crop-aware WHEAT/CARROT/TOMATO readiness, 10/6/4 field targets, unique reserved plant jobs, crop sales in `TOMATO → CARROT → WHEAT` order, and reactive sale timing when shared price falls below 90% of base or shed pressure reaches 70. The dynamic signal addresses the live top-game finding that final carrot price can crash under synchronized tape liquidation; it is not opponent fingerprinting.
 - C4 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 17.43s`; seed-0 smoke → `719 turns`, A bank `10371`, B bank `3000`.
 - C4 paired controls: v2 vs v1 `8–0`, mean margin `+1442.9`; v2 vs Walter `8–0`, mean margin `+2004.2`; v2 vs Rosa `0–8`, mean margin `−2498.1`. Sale probe: early low carrot price → quantity `3`, healthy price/low shed → `0`, day 28 → `3`. The optional `pyspiel` warning remained non-blocking.
-- C4 work-unit commit: parent will record the commit after this documentation update; C5 remains the full ladder and tier-placement gate.
+- C4 work-unit commit: cc896de feat: baseline_v2 — crop rotation and reactive market timing. Local verification passed; native committed-range review remains blocked by the acknowledged external workspace target (the user chose to include those docs in review).
+- C5 full ladder: `for f in data/reference-agents/*.py; do .venv/bin/python scripts/benchmark.py src/kaggriculture/agents/baseline_v2.py "$f" --seeds 4; done` → tier 1 placement; Finn `8-0-0` / `+6404.0`, Walter `8-0-0` / `+2004.2`, Rosa `0-8-0` / `-2498.1`, Hana `0-8-0` / `-6299.9`, Mateo `0-8-0` / `-16660.1`, Rita `0-8-0` / `-25828.9`, Bea `0-8-0` / `-135959.5`, Lena `0-8-0` / `-135940.2`, Silas `0-8-0` / `-135204.2`, and Cleo `0-8-0` / `-140448.6`.
+- C5 placement: v2 owns tier 1; the Rosa full gate failed at `0-8-0` and mean margin `-2498.1`, despite a `+2749.1` improvement over v1's `-5247.2`.
+- C5 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 22.58s`.
+- C5 warning: the optional `pyspiel` warning was non-blocking.
+- C5 report: `docs/phase3-baseline-v2-report.md`.
+- C5 upload control: no Kaggle upload was made.
 
 ## Key Learnings
 
 1. C3 combines bounded wheat capacity with deterministic nearest-unit single-use scheduling.
 2. Loaded units must be dropped before field assignment, while each farmer and visible hand receives one action.
-3. The recorded verification, smoke run, and paired controls provide the C3 evidence without closing C4-C6.
+3. C4 adds crop-aware rotation and reactive sale timing, improving the Rosa margin by `+2749.1` over v1 while still missing the tier-2 gate.
+4. C5 places v2 at tier 1; seat asymmetry is small except for Mateo and Cleo.
+5. The remaining gap is scale and endgame liquidation, while C6 remains pending an explicit upload decision.
