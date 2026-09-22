@@ -83,6 +83,7 @@ frozen control, not a file to mutate.
 - C6 artifacts: `submissions/main_v2.py` is byte-equivalent to `baseline_v2.py` (SHA-256 `45526a579c89fd25b97c4a7fb475f88dfb0195995cb01d51d0011faad3841521`); `submissions/main_v1.py` is byte-equivalent to `baseline_v1.py` (SHA-256 `a8744c892e6388d7e6f78b688366a79573a16d96b6ecfa1fddc4ab11a55cca6e`). Both are import-free single-file agents exposing `agent(obs)`.
 - C6 verification: `.venv/bin/python -m pytest tests/ -q` → `3 passed in 17.46s`; v2 seed-0 smoke → `719 turns`, A `10371`, B `3000`; v1 fallback seed-0 smoke → `719 turns`, A `7042`, B `3000`. Optional `pyspiel` warning remained non-blocking.
 - C6 upload gate: user explicitly selected v2. Kaggle submission `56445327` completed with **public score 332.9** (vs v0's 191.3, +141.6). Glicko rating remains provisional while episodes against the rest of the ladder continue to settle.
+- C6 v3 upload: user explicitly selected v3. Kaggle submission `56450455` accepted, currently `SubmissionStatus.PENDING`; score will appear once episodes complete.
 
 ## Key Learnings
 
