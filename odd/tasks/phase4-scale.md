@@ -11,12 +11,12 @@ Base: `baseline_v3` (harvest-priority, DIG, per-crop plant_until). Each lever ve
 
 ## Tasks
 
-- [ ] V1. Land buying logic: buy NE when premium crop ready & cash ≥ price + buffer; SW when melon/strawberry fills NE; never SE (frontier signature).
-- [ ] V2. Hand scaling: target 4→8 hands day 7, 12 hands day 10; batch hires at hour 0–2; reserve fib cost in market ordering.
-- [ ] V3. Animal chain: build coops/pastures on unlocked land; buy geese→cows→sheep by revenue tier; feed wheat (grow don't buy), CARE daily, collect fertilizer.
-- [ ] V4. Liquidation discipline: meter tomato/strawberry/melon (max 12/turn, price floor), ride wheat/egg floor, town center ×4 from day 20, sell early if glut signal.
-- [ ] V5. (Optional) Add strawberry/melon to rotation when land ≥ 2 quadrants.
-- [ ] V6. Full ladder + report; prepare main_v4.py; explicit upload decision.
+- [x] V1. Land buying logic: NE day 7 when tomato established, SW day 10, never SE (frontier signature)
+- [x] V2. Hand scaling: 4→6 day 3, 8 day 7, 10 day 10, 12 day 12 (fib batch hires)
+- [ ] V3. Animal chain: coops/pastures, feed wheat, CARE, fertilizer (implemented but placement needs tuning - animals bought but not placed)
+- [ ] V4. Liquidation discipline: meter premium, price floors, town ×4
+- [ ] V5. Optional: strawberry/melon when land ≥2 quads
+- [ ] V6. Full ladder + main_v4.py + upload decision
 
 ## Evidence
 
