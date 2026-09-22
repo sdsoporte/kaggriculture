@@ -23,4 +23,4 @@ Each fix is verified with paired benchmarks before proceeding to the next.
 - C3: per-crop plant_until implemented — wheat 25, carrot 26, tomato 21.
 - C1–C3 implementation: `src/kaggriculture/agents/baseline_v3.py` (import-free, self-contained).
 - C1–C3 verification: pytest `3 passed`; v3 vs v2 `8-0` mean `+3243.9`; v3 vs Walter `8-0` mean `+5399.2`; v3 vs Rosa `0-8` mean `-455.2` (was v2 `-2498.1`, +2042.9 improvement); full ladder: Finn `8-0` `+8712.4`, Walter `8-0` `+5399.2`, Rosa `0-8` `-455.2`, Hana `0-8` `-3689.1`, Mateo `1-7` `-10513.8`.
-- C1–C3 commit: parent will record the work-unit commit after this documentation update.
+- C1–C3 commit: parent will record the work-unit commit after this documentation update. 0f34dd6
