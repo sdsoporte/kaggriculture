@@ -1,0 +1,62 @@
+[
+  {
+    "path": "revenue/kaggriculture/cloud-hosted-loss-response/seed_budget.py",
+    "ref": "d87f5e6ef3a578128b0d34a7a1d22959b0948e21",
+    "local": "reference/integrated-selected/alder/seed_budget.py",
+    "sha256": "455024a4179a95ad597492e1f4b94de7bd3bfe7a3a88fd0dce46001f629ec3cd"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-hosted-loss-response/seed_main.py",
+    "ref": "d87f5e6ef3a578128b0d34a7a1d22959b0948e21",
+    "local": "reference/integrated-selected/alder/seed_main.py",
+    "sha256": "7aead9356b166de2c3ec9435ce1ba5f36a63635e41bdad27fe67ac9d131f9861"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-hosted-loss-response/SOURCE-FREEZE.json",
+    "ref": "d87f5e6ef3a578128b0d34a7a1d22959b0948e21",
+    "local": "reference/integrated-selected/alder/SOURCE-FREEZE.json",
+    "sha256": "f776369103f877c68a4b3df79d8851595686af1b52bf5a49e2ec740b0884422a"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-hosted-loss-response/README.md",
+    "ref": "d87f5e6ef3a578128b0d34a7a1d22959b0948e21",
+    "local": "reference/integrated-selected/alder/README.md",
+    "sha256": "c415485a00bfa65a0cb0288c7c844a5cf38a942b05d12f2a168e9bd3d66fb72b"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-model-lab/arlene_plan.py",
+    "ref": "0a9fbdfb97bc812ba2e06b16fe67ff894d39dc77",
+    "local": "reference/integrated-selected/claude/arlene_plan.py",
+    "sha256": "ae92730c733d39eeff4ec4c6624f30e042f1a5b3b330874c8022f0627510a658"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-model-lab/native_motifs.py",
+    "ref": "0a9fbdfb97bc812ba2e06b16fe67ff894d39dc77",
+    "local": "reference/integrated-selected/claude/native_motifs.py",
+    "sha256": "3d8c36830c6ce4fb95f3113034aaaf60b6d8aa40016542734fd783f866e5c9e8"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-model-lab/run_cards.py",
+    "ref": "0a9fbdfb97bc812ba2e06b16fe67ff894d39dc77",
+    "local": "reference/integrated-selected/claude/run_cards.py",
+    "sha256": "8b525c3bd901d2819e8100bd06b9217d566c12e8229538adb00ee5079042bf35"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-model-lab/arrival_facts.py",
+    "ref": "0a9fbdfb97bc812ba2e06b16fe67ff894d39dc77",
+    "local": "reference/integrated-selected/claude/arrival_facts.py",
+    "sha256": "37e96b7a564463b5981f868faeecdc5ab742e79c7177822b1907f757a26be4b1"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-model-lab/engine_pin.py",
+    "ref": "0a9fbdfb97bc812ba2e06b16fe67ff894d39dc77",
+    "local": "reference/integrated-selected/claude/engine_pin.py",
+    "sha256": "677984da568dd728a94d67cb3fdc8bb7e1fe50732d16108c215fdfe2df9d106a"
+  },
+  {
+    "path": "revenue/kaggriculture/cloud-model-lab/LICENSE-MIT.txt",
+    "ref": "0a9fbdfb97bc812ba2e06b16fe67ff894d39dc77",
+    "local": "reference/integrated-selected/claude/LICENSE-MIT.txt",
+    "sha256": "d124eb5e3916597a9835307ad56334d403bc7e4b642f83216ffc4086e8c8df9b"
+  }
+]

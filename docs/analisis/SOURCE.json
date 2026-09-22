@@ -1,0 +1,860 @@
+{
+  "ancestor_evidence": {
+    "applies_to_current_archive": false,
+    "archive_sha256": "70554dc01f8e84336ede169cf109f3d61152e169dce8ad5265b9625216fe52cb",
+    "broad": {
+      "failed_only_jobs1_resolved": {
+        "L": 2,
+        "W": 318
+      },
+      "original": {
+        "L": 2,
+        "W": 309,
+        "candidate_timeouts": 4,
+        "opponent_timeouts": 5
+      },
+      "pr": 10153
+    },
+    "strongest_control": {
+      "L": 1,
+      "T": 4,
+      "W": 27,
+      "errors": 0,
+      "games": 32,
+      "merge": "1c5a87de",
+      "pr": 10156,
+      "timeouts": 0
+    }
+  },
+  "checkpoint": {
+    "operation": "titan-v2-idle-fertilizer-and-active-seller-pruning-20260909",
+    "owner_authorization": "Integrate warranted observed-game and source improvements in one canonical TITAN; focused correctness/funding/shared-capacity checks; no new game panels or Kaggle submission in this task.",
+    "playing_strength": "not_measured_for_changed_bytes",
+    "runtime_entrypoint": "main.py::agent",
+    "stage": "bounded_idle_earning_and_operating_stock_enabled",
+    "submission_status": "not_submitted"
+  },
+  "components": [
+    {
+      "callsite": "FrozenSelected.transform",
+      "component": "Frozen SELL",
+      "consumed_result": "384-game comparative result: 31-9 dev / 13-3 held vs PR9997",
+      "enabled": true,
+      "source_pin": "9877 / 32c8610c9827d1686a6f831e2c4b6af4c00d32d2aa04dcf25699d976d6d97dd9"
+    },
+    {
+      "callsite": "TitanAgent._seed_selected -> SeedBudget.apply -> select_seed_queue",
+      "component": "ALDER/JUNIPER",
+      "consumed_result": "6 games; existing +240 cash, no funding-specific WTL flip",
+      "enabled": true,
+      "source_pin": "10116 / 0d59146cd13f4b4af832427ffe114b84ab089eb4"
+    },
+    {
+      "callsite": "TitanAgent.act -> _DeadlineTimer / terminal_liquidation_fallback",
+      "component": "ECON deadline",
+      "consumed_result": "Main-thread alarm semantics retained. Worker-specific trace guard before signal access; focused cancellation, restoration, actual entrypoint and raw-loader worker episode checks. No inherited game-strength claim.",
+      "enabled": true,
+      "source_pin": "Current manifest reference/titan-current/deadline_adapter.py"
+    },
+    {
+      "callsite": "TitanAgent._initialize -> TerminalOwner.act",
+      "component": "OSPREY terminal",
+      "consumed_result": "64 games; cash gain without WTL change; terminal_route=true",
+      "enabled": false,
+      "role": "internal experiment/test-only",
+      "source_pin": "56796f814b3ec1f76013aedc03d335bfedba6b37"
+    },
+    {
+      "callsite": "consumer=ordered -> IntegratedSelectedAgent.transform -> ordered seller / arrival_contract",
+      "component": "ATLAS/WREN/FLORA/Claude ordered + arrivals",
+      "consumed_result": "PR9997 comparison favors frozen; current bytes require new artifact games",
+      "enabled": false,
+      "role": "internal experiment/test-only",
+      "source_pin": "56796f814b3ec1f76013aedc03d335bfedba6b37"
+    },
+    {
+      "callsite": "consumer=ordered -> selected_sell_core",
+      "component": "SPRUCE scorer",
+      "consumed_result": "16 reports / 11504 actions; no whole-actor tail gain; research callsite only",
+      "enabled": false,
+      "role": "internal experiment/test-only",
+      "source_pin": "56796f814b3ec1f76013aedc03d335bfedba6b37"
+    },
+    {
+      "callsite": "TitanAgent.act -> TerminalHistoryJoin.observe/transform/remember",
+      "component": "CEDAR/T12/SORREL/JOINT/POLY/PORT/LARCH/ANCHOR/PRISM terminal history",
+      "consumed_result": "Five new methods, six cases; actual both-seat native 100394/100398 -> 100397/100396, same selected unit snapshot; no full game claim",
+      "enabled": false,
+      "enabled_setting": "Internal tests only: checks/TITAN-HISTORY-CONFIG.json; runtime dependency closure always packaged",
+      "role": "internal experiment/test-only",
+      "source_pin": "cfc199b5ecb01b9607a2b2e6048860c0e8076738"
+    },
+    {
+      "callsite": "main.agent entry_started -> TitanAgent.act; fallback copy before elapsed measurement",
+      "component": "Entrypoint clock accounting",
+      "consumed_result": "Two discriminating tests fail previous clock and pass current clock; no whole-RPC guarantee or game attribution",
+      "enabled": true,
+      "source_pin": "PR10154 / 47dfb2a9e66f237321f8a9d5b1305b2dc6198eac"
+    },
+    {
+      "callsite": "TitanAgent._initialize -> load(cache=True) for funding and SeedBudget code only",
+      "component": "Completed immutable module reuse",
+      "consumed_result": "Three focused cancellation/import/match-isolation tests; completed modules reused, controller and mutable ledgers rebuilt. No RPC-cause or full-game improvement claim.",
+      "enabled": true,
+      "source_pin": "Current source manifest titan_runtime.py"
+    },
+    {
+      "callsite": "TitanAgent._initialize -> SeedBudget.__init__ -> _derived(routes)",
+      "component": "Immutable SeedBudget route derivation reuse",
+      "consumed_result": "Claude T08 1788840840.568819 measured 91% seed derivation. Complete built-in route-content key, four-entry process cache, read-only tables, per-instance events. Focused semantic/cancellation/isolation and current archive timing tests; no new games.",
+      "enabled": true,
+      "source_pin": "ALDER derivative in current manifest reference/integrated-selected/alder/seed_budget.py; original retained under checks/reference/historical"
+    },
+    {
+      "callsite": "TitanAgent.act selected action/route checkpoint -> _initialize fresh controller route restore",
+      "component": "LARCH completed-route recovery",
+      "consumed_result": "Four focused actual-source tests: completed433 choice and selected fallback survive recovery, pre-return433 mutation discarded, new match remains fresh. Two retained-route cases fail predecessor and pass repair; no new game claim.",
+      "enabled": true,
+      "source_pin": "T08 1788842514.810219 / 1788842769.872099; current titan_runtime.py source manifest"
+    },
+    {
+      "callsite": "TitanAgent.transform_selected -> _redundant_hire_selected before seed funding",
+      "component": "T10 redundant-hire physical certificate",
+      "consumed_result": "Exact current87d7 protocol case +5 own/+0 rival both seats; CEDAR 12-pair interaction has zero feed interaction and positive reached/null T10 effects; 24-pair multi-opponent gate has no verdict regressions. Enabled by T08 integration; no new runtime source.",
+      "enabled": true,
+      "source_pin": "PR10382 / a881284d6b59366536ebc5e77f0f7c7f2923599dfb8588fd8b1ed6166bd51483"
+    },
+    {
+      "callsite": "TitanAgent._market_pressure_selected",
+      "component": "LARK market pressure",
+      "consumed_result": "Previously reported paired panel: candidate16W versus parent8W8L, mean margin+549.5. Historical development evidence, not a current-archive or leaderboard estimate.",
+      "current_source_validation": "10 focused contracts, including 3645 paired-sale arithmetic cases. Whole sale-only executable prefixes may compact known empty/zero-sale slots; purchases, positive operating inputs, malformed orders and incompatible quotes decline. No new game panel or current score estimate.",
+      "enabled": true,
+      "mechanism_intake": "Research desk MIDFIELD-FIND-04, 2026-09-09, tetsutani Market-Smart Farming V4/source348250931; source mechanism independently implemented without literal code reuse.",
+      "source_pin": "PR10728 ancestor; current manifest pressure_priority.py and sell_priority.py"
+    },
+    {
+      "callsite": "TitanAgent._committed_seed_retry_selected",
+      "component": "Committed seed retry",
+      "consumed_result": "Packaged source and boundary checks; subsequent64-game activation panel reported zero activations. Remains disabled.",
+      "enabled": false,
+      "source_pin": "PR10774; current manifest seed_retry.py"
+    },
+    {
+      "callsite": "FrozenSelected public snapshot; scheduler post_units; SeedBudget derivation",
+      "component": "QUICKSTEP/PULSE reuse",
+      "consumed_result": "Landed source is reused byte-for-byte. Earlier matched-game timing reports retain their original artifact scope; no new speed claim.",
+      "enabled": true,
+      "source_pin": "Current manifest seller_snapshot.py, observed_clone.py, plant_suffix.py"
+    },
+    {
+      "admission": "One displaced PLANT/BUILD, same actor and day, PASS absorption before reset/branch/hire; same-day watering for PLANT; preserve all later compatible-route seed requests from observed stock; recheck actual next observation; preserve market rows and unrelated actors.",
+      "callsite": "TitanAgent frozen production -> SpatialTempo; finish commits emitted actor stream",
+      "component": "Observed weed continuation",
+      "consumed_result": "Exact DELTA rejoin and SPRUCE native prefix, ASH later-seed/reset rejections, and source boundaries. A historical implementation was not recovered; its tests and development games are not attributed to these bytes. New whole-game strength remains unmeasured.",
+      "enabled": true,
+      "source_pin": "Current manifest spatial_tempo.py, titan_runtime.py, seed_budget.py and checks/test_weed_continuation.py"
+    },
+    {
+      "callsite": "TitanAgent._operating_stock_selected after market_pressure; completed FrozenSelected unit snapshot",
+      "component": "Observed operating-stock obligations",
+      "consumed_result": "29 focused source contracts, including production-day WATER and funded post-reset worker availability. At most two withheld units, incremental product valuation, full same-day funding and a 100-times-input cash cushion. No new game panel or measured score effect.",
+      "enabled": true,
+      "role": "active bounded operating-stock reservation; canonical operating_stock=true",
+      "source_pin": "Current source manifest operating_stock.py"
+    },
+    {
+      "callsite": "SpatialTempo -> selected producer -> common returned-action commit -> existing ObservedFillLedger",
+      "component": "Owned idle fertilizer recovery",
+      "consumed_result": "27 source/primitive/runtime contracts; real initialized Arlene/FrozenSelected direct and delayed terminal deliveries retain one DROP, unique existing FERT1 sale and observed receipt. Preexisting/competing fertilizer declines before departure; actual terminal purchases/inputs and larger or duplicate lots decline delivery. No full-game gain claim.",
+      "enabled": true,
+      "source_pin": "Current manifest spatial_tempo.py and titan_runtime.py"
+    },
+    {
+      "callsite": "FrozenSelected.transform -> optimize_lot",
+      "component": "Active frozen seller early pruning",
+      "consumed_result": "4 focused arithmetic methods compare exact optimizer plans/reports against preserved loop; no game runs",
+      "enabled": true,
+      "source_pin": "scheduler main 7d8e27296313bdbfbad255a4d6b5e1d85fa31737 ported to reference/titan-current/latest/selected_sell_core.py"
+    }
+  ],
+  "config": "TITAN-CONFIG.json",
+  "current": {
+    "archive": "exports/titan-current.tar.gz",
+    "build": "python build_integrated.py",
+    "configuration": "TITAN-CONFIG.json",
+    "entrypoint": "main.py::agent",
+    "manifest": "runtime/integrated-selected/CURRENT-SOURCE.json",
+    "receipt": "runtime/integrated-selected/CURRENT-ARCHIVE.json",
+    "verify": "python build_integrated.py --check"
+  },
+  "default": {
+    "budget_seconds": 1.0,
+    "committed": true,
+    "committed_seed_retry": false,
+    "consumer": "frozen",
+    "fourth_quadrant": false,
+    "funding": true,
+    "idle_fertilizer": true,
+    "market_pressure": true,
+    "operating_stock": true,
+    "redundant_hire": true,
+    "reserve_seconds": 0.01,
+    "seed": true,
+    "terminal_history": false,
+    "terminal_route": false
+  },
+  "diagnostic_intake": {
+    "artifact": "70554dc0",
+    "contention_wall_cpu_ratio": [
+      1.0,
+      1.668
+    ],
+    "owner": "Claude cloud-model-lab",
+    "reserve_decision": "Keep 10 ms; measurements do not establish original cause or a 73 ms reserve requirement",
+    "same_failed_development_cell": {
+      "calls": 719,
+      "fallbacks": 0,
+      "jobs": 1,
+      "max_call_seconds": 0.1507,
+      "opponent": "COK10",
+      "seat": 1,
+      "seed": 9921012,
+      "step569_seconds": 0.0043
+    },
+    "terminal_route_decision": "Keep off: 272-game research; frozen matchup default42W20T2L -> route54W0T10L, no robust gain demonstrated",
+    "tiny_budget_overshoot_ms": [
+      73,
+      37
+    ]
+  },
+  "entrypoint": "main.py::agent",
+  "game_evidence_for_this_archive": {
+    "evidence": "runtime/integrated-selected/IDLE-FERTILIZER-TESTS.json",
+    "historical_results_apply": false,
+    "new_full_games": 0,
+    "scope": "Enabled idle fertilizer recovery, existing operating-stock behavior, active seller pruning, source/primitive/cancellation checks. Peer panels on archive 6705147b remain separately attributed."
+  },
+  "historical_checkpoint": {
+    "operation": "titan-kaggriculture-checkpoint-20260908-01",
+    "owner_authorization": "Submission authorized for this single checkpoint; builder does not duplicate upload",
+    "pending_research": "Terminal route/history and broader capital changes remain test-only; redundant-hire certificate is enabled from current-package and multi-opponent evidence. Root retains provider upload.",
+    "runtime_entrypoint": "main.py::agent",
+    "upload_executor": "root",
+    "validation_consumers": [
+      "WIDEFIELD",
+      "ECON"
+    ]
+  },
+  "historical_component_game_evidence": {
+    "cedar_interaction_pairs": 12,
+    "cedar_multi_opponent_pairs": 24,
+    "current87d7_protocol": {
+      "candidate_own": 190324,
+      "control_own": 190319,
+      "errors": 0,
+      "margin_delta": 5,
+      "rival": 3550,
+      "seats": 2,
+      "seed": 9922999
+    },
+    "limits": "mirrored seats are dependent; feed interaction and opponent-conditioned cells retain their original labels",
+    "scope": "same runtime bytes with redundant_hire enabled; development/compatibility evidence, not hosted leaderboard",
+    "verdict_regressions": 0
+  },
+  "historical_role": "All other named archives, version receipts and controls are historical/test-only; preserve frozen experiments in flight.",
+  "next_increments": [
+    {
+      "component": "T01 COVE",
+      "current_step": "publish active crop case/source; route selection requires frozen comparator",
+      "owner": "COVE",
+      "source_pin": "cloud-macro-crops"
+    },
+    {
+      "component": "T02 MERIDIAN",
+      "current_step": "publish primary model source; landed engine_cases informs eligible fixtures",
+      "owner": "MERIDIAN",
+      "source_pin": "cloud-macro-livestock"
+    },
+    {
+      "component": "T03 MESA",
+      "current_step": "deadline/relative value discriminator for selected producer",
+      "owner": "MESA",
+      "source_pin": "9937"
+    },
+    {
+      "component": "T04 SABLE/KEEL",
+      "current_step": "service/hire reserve composition remains producer experiment",
+      "owner": "SABLE",
+      "source_pin": "9908"
+    },
+    {
+      "component": "T06 FIR",
+      "current_step": "affordable complete bundle callback feeds T14/T15 searches",
+      "owner": "FIR",
+      "source_pin": "9926"
+    },
+    {
+      "component": "T07 ORBIT/HARBOR/ELM",
+      "current_step": "use exact licensed source-wide opponent bank in next panel",
+      "owner": "Claude/WIDEFIELD",
+      "source_pin": "9942"
+    },
+    {
+      "component": "T09 Claude/WIDEFIELD",
+      "current_step": "Finish frozen checkpoints; consume canonical archive at next checkpoint with exact hash readback; current clock/history bytes need their own game attribution",
+      "owner": "Claude/WIDEFIELD",
+      "source_pin": "T09 registry"
+    },
+    {
+      "component": "T10 DOCK",
+      "current_step": "redundant-hire certificate enabled; broader hiring/service payback remains experimental",
+      "owner": "DOCK",
+      "source_pin": "PR10382 + current config"
+    },
+    {
+      "component": "T11/T15 ASTRA-RULE",
+      "current_step": "repair adaptive timeouts, then full-game evidence before default",
+      "owner": "ASTRA-RULE",
+      "source_pin": "10008"
+    },
+    {
+      "component": "T12 CEDAR/JOINT-HISTORY",
+      "current_step": "Consumed in terminal_history_join.py; JOINT/POLY retain scenario refinement, ASTRA owns next version after consumer panel",
+      "owner": "CEDAR/JOINT-HISTORY",
+      "source_pin": "cfc199b5ecb01b9607a2b2e6048860c0e8076738"
+    },
+    {
+      "component": "T14 ASTER/HAZEL",
+      "current_step": "cash scorer/reached quote feeds selected capital experiment; 192 games did not promote default",
+      "owner": "ASTER/HAZEL",
+      "source_pin": "9975"
+    },
+    {
+      "component": "MARLIN terminal join",
+      "current_step": "optional selected-terminal interface pending joined-history intake",
+      "owner": "MARLIN/ASTRA",
+      "source_pin": "46a13526"
+    },
+    {
+      "component": "WREN queue copy",
+      "current_step": "finish exact-type copy regression, publish pin; ASTRA intake next",
+      "owner": "WREN",
+      "source_pin": "active owner source"
+    },
+    {
+      "component": "ECON calibration",
+      "current_step": "Use actual caller/RPC subinterval evidence to calibrate reserve with Claude/WIDEFIELD; current 10 ms reserve unchanged, no inferred step569 diagnosis",
+      "owner": "Root ECON",
+      "source_pin": "task 6a9f40a1-4f48-83e9-b057-79e3447de9ed"
+    }
+  ],
+  "official_engine": {
+    "commit": "28b6d8af3ce73926b3d0fda1410c1ddd8384ab8c",
+    "version": "1.32.7"
+  },
+  "release": "TITAN",
+  "runtime": {
+    "LICENSE": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source_path": "LICENSE"
+    },
+    "NOTICE": {
+      "bytes": 2977,
+      "sha256": "e72e9fb3fa80ecb91df0fd656b41dad3ed558f6046230ad334a9800feacfdb2e",
+      "source_path": "NOTICE"
+    },
+    "TITAN-CONFIG.json": {
+      "bytes": 359,
+      "sha256": "d2f33bc4ced9e590a5acf1a6367b89aa37a41bca015916b922b5055bdcf7c4d5",
+      "source_path": "TITAN-CONFIG.json"
+    },
+    "TITAN-RELEASE.md": {
+      "bytes": 11984,
+      "sha256": "f2bdb5c4f3a4510117557f8ee6558de4ec47766e5647442f63a76e716bd22ce5",
+      "source_path": "TITAN-RELEASE.md"
+    },
+    "checks/TITAN-HISTORY-CONFIG.json": {
+      "bytes": 1148,
+      "sha256": "79efcc4048db3067906aa695d702a402097478f64f19c801f7a1da2daa3feb87",
+      "source_path": "TITAN-HISTORY-CONFIG.json"
+    },
+    "checks/reference/engine/kaggriculture.json": {
+      "bytes": 6002,
+      "sha256": "a82c89c1a2315b93f39775d8e025471a01b738647c9772658368ee6b1b6f4867",
+      "source_path": "reference/engine/kaggriculture.json"
+    },
+    "checks/reference/engine/kaggriculture.py": {
+      "bytes": 40356,
+      "sha256": "bc8a54879ef02c7ea64b8b333d6a976f0ea65c4949149d01f463f23bccee653e",
+      "source_path": "reference/engine/kaggriculture.py"
+    },
+    "checks/reference/engine/utils.py": {
+      "bytes": 8634,
+      "sha256": "537b627b11784d424147ef57ebb0369b039bf83c9f891e81f10486b1f552334b",
+      "source_path": "reference/engine/utils.py"
+    },
+    "checks/reference/evaluator/evaluate.py": {
+      "bytes": 24190,
+      "sha256": "e30b3108e0027477ab7ddbc057892a241c41a1f2b38f72caf267477877c4333c",
+      "source_path": "reference/evaluator/evaluate.py"
+    },
+    "checks/reference/evaluator/loader.py": {
+      "bytes": 8203,
+      "sha256": "cd113a94ae99b03492502e425bdcf09c3db17a2aa2a8fd866f0d78caec9e311e",
+      "source_path": "reference/evaluator/loader.py"
+    },
+    "checks/reference/evaluator/official_agent.py": {
+      "bytes": 8091,
+      "sha256": "b4e7326ed90847032b14f45919b2b9f4c89901a0df8afae7241260c03560a88a",
+      "source_path": "reference/evaluator/official_agent.py"
+    },
+    "checks/reference/historical/seed_budget-before-derived-cache.py": {
+      "bytes": 3049,
+      "sha256": "455024a4179a95ad597492e1f4b94de7bd3bfe7a3a88fd0dce46001f629ec3cd",
+      "source_path": "reference/historical/seed_budget-before-derived-cache.py"
+    },
+    "checks/reference/weed-continuation/ash-native.json.gz": {
+      "bytes": 2658,
+      "sha256": "6ad0a1d07f1edf7b16bd9182bbffe57d7d507d515a69911dd181219c14f9eb0c",
+      "source_path": "reference/weed-continuation/ash-native.json.gz"
+    },
+    "checks/reference/weed-continuation/delta-native.json.gz": {
+      "bytes": 5226,
+      "sha256": "f9a043a4e00692a602d83f4aa03d4cf0ad83ac7b2ed3ef6b19f819a2ae811004",
+      "source_path": "reference/weed-continuation/delta-native.json.gz"
+    },
+    "checks/reference/weed-continuation/spruce-native.json.gz": {
+      "bytes": 3380,
+      "sha256": "358d62f111046b9be3ada25ebdd6a198c0bf3e0a5d55ee3a358bb1f22be5b9be",
+      "source_path": "reference/weed-continuation/spruce-native.json.gz"
+    },
+    "checks/test_committed_seed_retry_runtime.py": {
+      "bytes": 2269,
+      "sha256": "b48b6b1704186ef9b3ad9828b190019415d68dde5b6e624784958a7638a47fca",
+      "source_path": "test_committed_seed_retry_runtime.py"
+    },
+    "checks/test_engine_semantics.py": {
+      "bytes": 15070,
+      "sha256": "fc0a65f98fc78e4dc0cc5e1b553a53d514276fe83fb3106d4ed55f028b0305f6",
+      "source_path": "test_engine_semantics.py"
+    },
+    "checks/test_entrypoint_clock.py": {
+      "bytes": 3112,
+      "sha256": "3e2c3122a1330dfb7cb38d16f9f66965810052a429b2e10688854c75c9534b04",
+      "source_path": "test_entrypoint_clock.py"
+    },
+    "checks/test_funded_payback_runtime.py": {
+      "bytes": 4847,
+      "sha256": "debea504799ed40eb43dc5df2451625ece6331af8546ea01123bb5c420e9f03b",
+      "source_path": "test_funded_payback_runtime.py"
+    },
+    "checks/test_idle_fertilizer.py": {
+      "bytes": 27637,
+      "sha256": "234999794ae80b9e2e22a8c9c90db1b0a01c3c653cdb79b589d5ee557580a983",
+      "source_path": "test_idle_fertilizer.py"
+    },
+    "checks/test_market_pressure_runtime.py": {
+      "bytes": 7072,
+      "sha256": "26858662554f713478cd800d81dc3d3f18404eb225e379416248c0a8b714ae8f",
+      "source_path": "test_market_pressure_runtime.py"
+    },
+    "checks/test_module_recovery.py": {
+      "bytes": 3476,
+      "sha256": "930244277af14cb493b4d63f542b1446820e25f46a7e6c7be06be3ee303e2b93",
+      "source_path": "test_module_recovery.py"
+    },
+    "checks/test_operating_stock.py": {
+      "bytes": 13359,
+      "sha256": "3367778e61cec4ae88f139a0999762088eea7012b38badab57310666161aa197",
+      "source_path": "test_operating_stock.py"
+    },
+    "checks/test_ordered_selected_sell.py": {
+      "bytes": 11682,
+      "sha256": "0b0a700eb2b8efe0bdc59e5a3dde982fa14c1a5e9b847c9fb41438ed8e1700a0",
+      "source_path": "test_ordered_selected_sell.py"
+    },
+    "checks/test_route_recovery.py": {
+      "bytes": 3059,
+      "sha256": "40f9ab586c8a9ea6ab6be47b5d29129a0e9dfb256d45169fc2a64af90f440078",
+      "source_path": "test_route_recovery.py"
+    },
+    "checks/test_seed_derived.py": {
+      "bytes": 4554,
+      "sha256": "74109501f3277b6af6d6032b1c56d2152b06cd5d6274e5eed1c65edf3bf28d8d",
+      "source_path": "test_seed_derived.py"
+    },
+    "checks/test_seed_retry.py": {
+      "bytes": 12268,
+      "sha256": "6180896c9f355bb8ad36d7e086f37706461724adb10ff95a6ed3bd3ce6e606be",
+      "source_path": "../cloud-committed-seed-retry/test_seed_retry.py"
+    },
+    "checks/test_selected_pruning.py": {
+      "bytes": 3673,
+      "sha256": "90886784fabbc9002b01d8edeeae8ed0ceabc1ffd678e56c6107806b72e580b9",
+      "source_path": "test_selected_pruning.py"
+    },
+    "checks/test_terminal_history_join.py": {
+      "bytes": 7847,
+      "sha256": "d4d025d21c6c941d34056d9584cd875c77c9d07975a53ed8c089fb599e292aee",
+      "source_path": "test_terminal_history_join.py"
+    },
+    "checks/test_weed_continuation.py": {
+      "bytes": 16037,
+      "sha256": "ec25b5707539fc6d987705c02cf06c3a4fbb138b71d2684c48ac8c8123c6bdfc",
+      "source_path": "test_weed_continuation.py"
+    },
+    "checks/test_worker_deadline.py": {
+      "bytes": 5437,
+      "sha256": "c531c51436d1bcdfbb58ae4ed06defe8c84e6dcdfe975c4436f31810505904ab",
+      "source_path": "test_worker_deadline.py"
+    },
+    "checks/test_worker_episode.py": {
+      "bytes": 5328,
+      "sha256": "bcd9a56fc7af87d70b4fb168e7109614a44a52b9aacbcd1e208bb36ecc13b034",
+      "source_path": "test_worker_episode.py"
+    },
+    "fourth_quadrant.py": {
+      "bytes": 17915,
+      "sha256": "1646b9e06803e29066b660c0547968eb99589bab1abc374cda0b5945b11de4f8",
+      "source_path": "fourth_quadrant.py"
+    },
+    "frozen_selected.py": {
+      "bytes": 7011,
+      "sha256": "5ce139b84dcb5d8983b7a150abbd1aa2674cdaa1e891f31b56a785a7a12e77d5",
+      "source_path": "frozen_selected.py"
+    },
+    "funded_payback.py": {
+      "bytes": 39469,
+      "sha256": "7851a5cd960cf0f01f333d0d1f23b4f32a61e40ae4d96443a4161bbfc80a4e72",
+      "source_path": "../cloud-economic-stress/funded_payback/funded_payback.py"
+    },
+    "funded_payback_runtime.py": {
+      "bytes": 3510,
+      "sha256": "3dff2bdbd201e222a0c36692950518d0cc287fe6cc87a6b57f54d8bc26e2628e",
+      "source_path": "funded_payback_runtime.py"
+    },
+    "integrated_selected.py": {
+      "bytes": 12860,
+      "sha256": "e16702fd388c2ae0ead9bb59a078e0099e0c149cc39002703b3b7988bb061bd8",
+      "source_path": "reference/titan-current/latest/integrated_selected.py"
+    },
+    "main.py": {
+      "bytes": 1942,
+      "sha256": "0dae922de836cdb590891d9bbca9a58e18114ebcc64e16fb5b264311f07133e5",
+      "source_path": "main.py"
+    },
+    "mechanics.py": {
+      "bytes": 22526,
+      "sha256": "579965e589237d1e5bbcc8b8448188f91b173d4480430d34b3a7f0e07e0c48d3",
+      "source_path": "mechanics.py"
+    },
+    "observed_clone.py": {
+      "bytes": 1442,
+      "sha256": "ab92d3c18c8edb63cbdd31626ada447783b85bbe9ed32bb546e6c7834a99b152",
+      "source_path": "../cloud-runtime-pulse/observed_clone.py"
+    },
+    "operating_stock.py": {
+      "bytes": 16427,
+      "sha256": "9181beb34754975377bbc4ed6e5766cbb63bb691f57c2fa50e0c4f67459e62af",
+      "source_path": "operating_stock.py"
+    },
+    "ordered_selected_sell.py": {
+      "bytes": 5101,
+      "sha256": "b38caacb2d2156e83aab9d1471e1312a241250dae8b655c1b133fce097bca426",
+      "source_path": "reference/titan-current/latest/ordered_selected_sell.py"
+    },
+    "plant_suffix.py": {
+      "bytes": 1394,
+      "sha256": "74bb2152dde111cd2e1b25751cd2bc4c3428db08a126e7896b08b4bb87ddd693",
+      "source_path": "../cloud-runtime-pulse/plant_suffix.py"
+    },
+    "pressure_priority.py": {
+      "bytes": 9811,
+      "sha256": "d2dbdc038e2622103c73f53675b3a45ba18958e22052c4e9bb1bf163ae5c6ccb",
+      "source_path": "../cloud-opponent-league/lark-responsive/pressure_priority.py"
+    },
+    "reference/decision/README.md": {
+      "bytes": 9410,
+      "sha256": "98c3c233192c83042c80c275cabe2d0ae382baab01ed04e69266ed90042c5bb2",
+      "source_path": "reference/decision/README.md"
+    },
+    "reference/decision/decision.py": {
+      "bytes": 7759,
+      "sha256": "9d78406668c927785b29f5bf2b5a67f0263bfcd63f626c881a60bad5f8293c52",
+      "source_path": "reference/decision/decision.py"
+    },
+    "reference/engine/LICENSE": {
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "source_path": "reference/engine/LICENSE"
+    },
+    "reference/integrated-selected/UPSTREAM.json": {
+      "bytes": 2851,
+      "sha256": "9bf4683eeebfc029d4e64d81e712b0584e2c3349e1a92f274cc986f95681c18c",
+      "source_path": "reference/integrated-selected/UPSTREAM.json"
+    },
+    "reference/integrated-selected/alder/seed_budget.py": {
+      "bytes": 4723,
+      "sha256": "9ab840edbb60cea36e96a13d42cc30989daaf5614afe0665a8e2f5ce571e0dde",
+      "source_path": "reference/integrated-selected/alder/seed_budget.py"
+    },
+    "reference/integrated-selected/claude/LICENSE-APACHE-2.0.txt": {
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "source_path": "reference/integrated-selected/claude/LICENSE-APACHE-2.0.txt"
+    },
+    "reference/integrated-selected/claude/LICENSE-MIT.txt": {
+      "bytes": 1098,
+      "sha256": "d124eb5e3916597a9835307ad56334d403bc7e4b642f83216ffc4086e8c8df9b",
+      "source_path": "reference/integrated-selected/claude/LICENSE-MIT.txt"
+    },
+    "reference/integrated-selected/claude/arlene_plan.py": {
+      "bytes": 29892,
+      "sha256": "ae92730c733d39eeff4ec4c6624f30e042f1a5b3b330874c8022f0627510a658",
+      "source_path": "reference/integrated-selected/claude/arlene_plan.py"
+    },
+    "reference/integrated-selected/claude/arrival_facts.py": {
+      "bytes": 7956,
+      "sha256": "37e96b7a564463b5981f868faeecdc5ab742e79c7177822b1907f757a26be4b1",
+      "source_path": "reference/integrated-selected/claude/arrival_facts.py"
+    },
+    "reference/integrated-selected/claude/engine_pin.py": {
+      "bytes": 14424,
+      "sha256": "677984da568dd728a94d67cb3fdc8bb7e1fe50732d16108c215fdfe2df9d106a",
+      "source_path": "reference/integrated-selected/claude/engine_pin.py"
+    },
+    "reference/integrated-selected/claude/native_motifs.py": {
+      "bytes": 27220,
+      "sha256": "3d8c36830c6ce4fb95f3113034aaaf60b6d8aa40016542734fd783f866e5c9e8",
+      "source_path": "reference/integrated-selected/claude/native_motifs.py"
+    },
+    "reference/integrated-selected/claude/run_cards.py": {
+      "bytes": 11437,
+      "sha256": "8b525c3bd901d2819e8100bd06b9217d566c12e8229538adb00ee5079042bf35",
+      "source_path": "reference/integrated-selected/claude/run_cards.py"
+    },
+    "reference/next-panel/LICENSE": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source_path": "reference/next-panel/LICENSE"
+    },
+    "reference/next-panel/NEXT-DISTRIBUTION-NOTICE.txt": {
+      "bytes": 836,
+      "sha256": "2c32238779169ecf5e673b58d50c94573e3128dda27d2ba5496459477132b02e",
+      "source_path": "reference/next-panel/NEXT-DISTRIBUTION-NOTICE.txt"
+    },
+    "reference/next-panel/UPSTREAM.json": {
+      "bytes": 3131,
+      "sha256": "617e055107bf0fed5ae4ba55e9468398debdc09aa7c304a3e18cadbc283f251b",
+      "source_path": "reference/next-panel/UPSTREAM.json"
+    },
+    "reference/next-panel/vendor/arlene.py": {
+      "bytes": 46342,
+      "sha256": "1dc166ae2bf0c56a44fac4482f469b8812968c4cb32459cb9860f5077897a7d4",
+      "source_path": "reference/next-panel/vendor/arlene.py"
+    },
+    "reference/ordered-feasibility/atlas/projection.py": {
+      "bytes": 13654,
+      "sha256": "0ab335604b46a415bfb61cc5494c2d6f83591b13f2aa61323af6cf4a6e90e002",
+      "source_path": "reference/ordered-feasibility/atlas/projection.py"
+    },
+    "reference/selected-action/t08/LICENSE-ROOT": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source_path": "reference/selected-action/t08/LICENSE-ROOT"
+    },
+    "reference/selected-action/t08/arrival_contract.py": {
+      "bytes": 8863,
+      "sha256": "2ebe366f326ce1ff8a9a014f1a8142883a9393f69ae0aef00e203643e068ebd8",
+      "source_path": "reference/selected-action/t08/arrival_contract.py"
+    },
+    "reference/titan-current/deadline_adapter.py": {
+      "bytes": 15458,
+      "sha256": "7f70a25dfb703f50aa83cd281a9722d575571da1073e605c5927fc35453ab486",
+      "source_path": "reference/titan-current/deadline_adapter.py"
+    },
+    "reference/titan-current/latest/integrated_selected.py": {
+      "bytes": 12860,
+      "sha256": "e16702fd388c2ae0ead9bb59a078e0099e0c149cc39002703b3b7988bb061bd8",
+      "source_path": "reference/titan-current/latest/integrated_selected.py"
+    },
+    "reference/titan-current/latest/ordered_selected_sell.py": {
+      "bytes": 5101,
+      "sha256": "b38caacb2d2156e83aab9d1471e1312a241250dae8b655c1b133fce097bca426",
+      "source_path": "reference/titan-current/latest/ordered_selected_sell.py"
+    },
+    "reference/titan-current/latest/selected_action_sell.py": {
+      "bytes": 21680,
+      "sha256": "3aa372c563a7cc4c7f5273e9fd1b9652959df301d84652c44be1c5bfeea1500e",
+      "source_path": "reference/titan-current/latest/selected_action_sell.py"
+    },
+    "reference/titan-current/latest/selected_sell_core.py": {
+      "bytes": 7953,
+      "sha256": "4b3c3e4b89a0e404dc31fd634d761842e356e7ad6e76576c7f70382910ff26e7",
+      "source_path": "reference/titan-current/latest/selected_sell_core.py"
+    },
+    "reference/titan-current/redundant_hire.py": {
+      "bytes": 9036,
+      "sha256": "a881284d6b59366536ebc5e77f0f7c7f2923599dfb8588fd8b1ed6166bd51483",
+      "source_path": "reference/titan-current/redundant_hire.py"
+    },
+    "reference/titan-current/seed_funding.py": {
+      "bytes": 13630,
+      "sha256": "e329a3535aeeed745cf975451b7bea859a6ec6f39cf54aeac57c3a3492cc3128",
+      "source_path": "reference/titan-current/seed_funding.py"
+    },
+    "reference/titan-current/terminal.py": {
+      "bytes": 18390,
+      "sha256": "0623cac3515221b874e9bbbeef97afdf2e378489b0b6724fa9df13627a283a64",
+      "source_path": "reference/titan-current/terminal.py"
+    },
+    "reference/titan-current/terminal_composition.py": {
+      "bytes": 7047,
+      "sha256": "0f79cf7cf77b85e2da32c0f02f586be7a3cb3b20cbbe47bd87e968f666899c40",
+      "source_path": "reference/titan-current/terminal_composition.py"
+    },
+    "reference/titan-current/vendor/sell/mechanics.py": {
+      "bytes": 22526,
+      "sha256": "579965e589237d1e5bbcc8b8448188f91b173d4480430d34b3a7f0e07e0c48d3",
+      "source_path": "mechanics.py"
+    },
+    "reference/titan-current/vendor/sell/reference/decision/decision.py": {
+      "bytes": 7759,
+      "sha256": "9d78406668c927785b29f5bf2b5a67f0263bfcd63f626c881a60bad5f8293c52",
+      "source_path": "reference/decision/decision.py"
+    },
+    "reference/titan-current/vendor/sell/reference/next-panel/vendor/arlene.py": {
+      "bytes": 46342,
+      "sha256": "1dc166ae2bf0c56a44fac4482f469b8812968c4cb32459cb9860f5077897a7d4",
+      "source_path": "reference/next-panel/vendor/arlene.py"
+    },
+    "reference/titan-current/vendor/sell/scheduler.py": {
+      "bytes": 19766,
+      "sha256": "32c8610c9827d1686a6f831e2c4b6af4c00d32d2aa04dcf25699d976d6d97dd9",
+      "source_path": "reference/titan-current/vendor/sell/scheduler.py"
+    },
+    "reference/titan-current/vendor/terminal.py": {
+      "bytes": 18390,
+      "sha256": "0623cac3515221b874e9bbbeef97afdf2e378489b0b6724fa9df13627a283a64",
+      "source_path": "reference/titan-current/terminal.py"
+    },
+    "reference/titan-history/UPSTREAM.json": {
+      "bytes": 2317,
+      "sha256": "970a5e3a20c2f5e7689f9e31f01d465f4203d100d54b95b1352ed82a605169db",
+      "source_path": "reference/titan-history/UPSTREAM.json"
+    },
+    "reference/titan-history/flow.py": {
+      "bytes": 7341,
+      "sha256": "373e30ef6f35986b793c0a2efc96f8060bdafbcc5275bdbcb196e2b0d36757fb",
+      "source_path": "reference/titan-history/flow.py"
+    },
+    "reference/titan-history/full_support.py": {
+      "bytes": 10968,
+      "sha256": "91f2cbcf80e8b82a26a987654fef5df0036cd87271522d78b98df8fd9422b06f",
+      "source_path": "reference/titan-history/full_support.py"
+    },
+    "reference/titan-history/joint_terminal_history.py": {
+      "bytes": 9628,
+      "sha256": "46851e5c6ec71cc00253373c50def744c9ca4ae0d4601b5541b24eaf7c6e4a98",
+      "source_path": "reference/titan-history/joint_terminal_history.py"
+    },
+    "reference/titan-history/observed_fills.py": {
+      "bytes": 14860,
+      "sha256": "8439d571028e5613bfcd70cfa1428ee86b1c17c89a1297288191c2a833f38857",
+      "source_path": "reference/titan-history/observed_fills.py"
+    },
+    "reference/titan-history/scenario_adapter.py": {
+      "bytes": 14270,
+      "sha256": "d90b343162b6092101d6200a851ab07128bb8d829ecb5c50bf73dd1d7a556552",
+      "source_path": "reference/titan-history/scenario_adapter.py"
+    },
+    "reference/titan-history/score_endgame.py": {
+      "bytes": 20910,
+      "sha256": "a5047df51051cf2a1a33ddae968977b03a7b84bd90a5c80c82a354f472a51518",
+      "source_path": "reference/titan-history/score_endgame.py"
+    },
+    "reference/titan-history/selected_action_history.py": {
+      "bytes": 15289,
+      "sha256": "f83bf0804eadee97b91250ec0f93c44332cc2269d38b66aa25568873c46694d4",
+      "source_path": "reference/titan-history/selected_action_history.py"
+    },
+    "reference/titan-history/selector.py": {
+      "bytes": 7204,
+      "sha256": "a54f384fabbedda0b2071beabb280abddcadb8e91a1206321ffaa99d85fce0e1",
+      "source_path": "reference/titan-history/selector.py"
+    },
+    "reference/titan-history/solver.py": {
+      "bytes": 2857,
+      "sha256": "65b394dcfb3de6177f7b5b27b1960dd92db1d8d33dcc04a5c673ce848c8dc404",
+      "source_path": "reference/titan-history/solver.py"
+    },
+    "reference/titan-history/terminal_inputs.py": {
+      "bytes": 16139,
+      "sha256": "2a2a3e0695901db4341e380c0a1b1e400458116dd41dc6df96f97c4c187920b8",
+      "source_path": "reference/titan-history/terminal_inputs.py"
+    },
+    "reference/titan-history/terminal_mechanics.py": {
+      "bytes": 4839,
+      "sha256": "ee6e9bd6365b73bb06aea1a77143f84e169ccfc0c4536746884f3cb4c18ef674",
+      "source_path": "reference/titan-history/terminal_mechanics.py"
+    },
+    "reference/titan-history/terminal_utility.py": {
+      "bytes": 12795,
+      "sha256": "057057ca6b96437d4d20e3bff68efc6dbfe77ee56796a14d3508e869ad14ba9a",
+      "source_path": "reference/titan-history/terminal_utility.py"
+    },
+    "reference/titan-history/weighted_selector.py": {
+      "bytes": 8995,
+      "sha256": "dda2a6beee811c7e5cdb511d0bde2403fb71841b97b3275ddc1b8f5e84ac35c7",
+      "source_path": "reference/titan-history/weighted_selector.py"
+    },
+    "scheduler.py": {
+      "bytes": 20767,
+      "sha256": "d30dec2d06b5e53977c895657963cd18046e89fbc3212e0e5117de021f4cf2d1",
+      "source_path": "scheduler.py"
+    },
+    "seed_retry.py": {
+      "bytes": 11359,
+      "sha256": "71396deb4098709f128a4f0b8d8e6d7259da2d0bfe383f224a6d57d8a85eb72f",
+      "source_path": "../cloud-committed-seed-retry/seed_retry.py"
+    },
+    "selected_action_sell.py": {
+      "bytes": 21680,
+      "sha256": "3aa372c563a7cc4c7f5273e9fd1b9652959df301d84652c44be1c5bfeea1500e",
+      "source_path": "reference/titan-current/latest/selected_action_sell.py"
+    },
+    "selected_sell_core.py": {
+      "bytes": 7953,
+      "sha256": "4b3c3e4b89a0e404dc31fd634d761842e356e7ad6e76576c7f70382910ff26e7",
+      "source_path": "reference/titan-current/latest/selected_sell_core.py"
+    },
+    "sell_priority.py": {
+      "bytes": 5095,
+      "sha256": "b0e8c21cb1c67cf81863c545cb3e3c8727c252ba2609414a9a61401ffc718787",
+      "source_path": "../cloud-opponent-league/lark-responsive/sell_priority.py"
+    },
+    "seller_snapshot.py": {
+      "bytes": 1452,
+      "sha256": "e7093c760c05400948ece0a4a00495ab2cb93fd56e585eba9eb78b1f13666576",
+      "source_path": "../cloud-quickstep/seller_snapshot.py"
+    },
+    "spatial_tempo.py": {
+      "bytes": 50433,
+      "sha256": "1ff467d2e028f229b8c5c74547e6fc3cb88e206a26d94893174fc712f9d8fbdf",
+      "source_path": "spatial_tempo.py"
+    },
+    "terminal_history_join.py": {
+      "bytes": 5505,
+      "sha256": "e1482ba22eeb2784157f337e2abc055cf4e9ac7cc8d464fe75a67cc38ec41582",
+      "source_path": "terminal_history_join.py"
+    },
+    "titan_runtime.py": {
+      "bytes": 28406,
+      "sha256": "7e2f7d5f5bca1a8bee7a9c2c7a30ffe6664dc5e2181a75dde9172d243946568e",
+      "source_path": "titan_runtime.py"
+    }
+  },
+  "upstream_snapshot": "56796f814b3ec1f76013aedc03d335bfedba6b37"
+}

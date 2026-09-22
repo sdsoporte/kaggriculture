@@ -1,0 +1,54 @@
+{
+  "commit": "cfc199b5ecb01b9607a2b2e6048860c0e8076738",
+  "sources": {
+    "selected_action_history.py": {
+      "source_path": "cloud-market-response/selected_action_history.py",
+      "sha256": "ff7abe56cff0fe68de8652bcee4c67997eae0666a12ba953eb48ae3e5f8f0d9b"
+    },
+    "joint_terminal_history.py": {
+      "source_path": "cloud-market-response/joint_terminal_history.py",
+      "sha256": "46851e5c6ec71cc00253373c50def744c9ca4ae0d4601b5541b24eaf7c6e4a98"
+    },
+    "flow.py": {
+      "source_path": "cloud-market-response/flow.py",
+      "sha256": "373e30ef6f35986b793c0a2efc96f8060bdafbcc5275bdbcb196e2b0d36757fb"
+    },
+    "observed_fills.py": {
+      "source_path": "cloud-observed-fills/observed_fills.py",
+      "sha256": "8439d571028e5613bfcd70cfa1428ee86b1c17c89a1297288191c2a833f38857"
+    },
+    "scenario_adapter.py": {
+      "source_path": "cloud-frontier-decision/execution/scenarios/adapter.py",
+      "sha256": "d90b343162b6092101d6200a851ab07128bb8d829ecb5c50bf73dd1d7a556552"
+    },
+    "terminal_inputs.py": {
+      "source_path": "cloud-score-endgame/terminal_inputs.py",
+      "sha256": "2a2a3e0695901db4341e380c0a1b1e400458116dd41dc6df96f97c4c187920b8"
+    },
+    "score_endgame.py": {
+      "source_path": "cloud-score-endgame/score_endgame.py",
+      "sha256": "a5047df51051cf2a1a33ddae968977b03a7b84bd90a5c80c82a354f472a51518"
+    },
+    "terminal_utility.py": {
+      "source_path": "cloud-terminal-utility/terminal_utility.py",
+      "sha256": "057057ca6b96437d4d20e3bff68efc6dbfe77ee56796a14d3508e869ad14ba9a"
+    },
+    "full_support.py": {
+      "source_path": "cloud-full-support/full_support.py",
+      "sha256": "91f2cbcf80e8b82a26a987654fef5df0036cd87271522d78b98df8fd9422b06f"
+    },
+    "weighted_selector.py": {
+      "source_path": "cloud-weighted-plan-selector/weighted_selector.py",
+      "sha256": "dda2a6beee811c7e5cdb511d0bde2403fb71841b97b3275ddc1b8f5e84ac35c7"
+    },
+    "selector.py": {
+      "source_path": "cloud-market-game-theory/selector.py",
+      "sha256": "a54f384fabbedda0b2071beabb280abddcadb8e91a1206321ffaa99d85fce0e1"
+    },
+    "solver.py": {
+      "source_path": "cloud-market-game-theory/solver.py",
+      "sha256": "65b394dcfb3de6177f7b5b27b1960dd92db1d8d33dcc04a5c673ce848c8dc404"
+    }
+  },
+  "license": "Apache-2.0; full text ../../LICENSE"
+}

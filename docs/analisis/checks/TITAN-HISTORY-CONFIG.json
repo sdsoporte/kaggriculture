@@ -1,0 +1,55 @@
+{
+  "consumer": "frozen",
+  "seed": true,
+  "funding": true,
+  "terminal_route": false,
+  "committed": true,
+  "budget_seconds": 1.0,
+  "reserve_seconds": 0.01,
+  "terminal_history": true,
+  "history_hypotheses": {
+    "slot_templates": [
+      {
+        "id": "catalog",
+        "origin": "explicit finite catalog-order hypothesis",
+        "slots": [
+          "WHEAT",
+          "CARROT",
+          "TOMATO",
+          "STRAWBERRY",
+          "MELON",
+          "EGG",
+          "MILK",
+          "WOOL",
+          "FERTILIZER"
+        ]
+      },
+      {
+        "id": "reverse",
+        "origin": "explicit finite reverse-order hypothesis",
+        "slots": [
+          "FERTILIZER",
+          "WOOL",
+          "MILK",
+          "EGG",
+          "MELON",
+          "STRAWBERRY",
+          "TOMATO",
+          "CARROT",
+          "WHEAT"
+        ]
+      }
+    ],
+    "unobserved_lots": [
+      {
+        "id": "quiet-operating",
+        "origin": "explicit quiet operating-stock hypothesis, not inferred zero",
+        "stock": {
+          "WHEAT": 0,
+          "FERTILIZER": 0
+        }
+      }
+    ]
+  },
+  "terminal_tie_break": "baseline"
+}

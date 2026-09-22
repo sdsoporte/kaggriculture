@@ -1,0 +1,86 @@
+{
+  "observed_at": "2026-09-07T09:43:27.033782+00:00",
+  "sources": [
+    {
+      "name": "arlene",
+      "url": "https://www.kaggle.com/code/lynnsakurai/farming-score-a-mathematical-approach",
+      "version": 14,
+      "license": "Apache-2.0",
+      "page_public_score": 2459.6,
+      "index_score": 2475.2,
+      "historical_best_v4": 2733.3
+    },
+    {
+      "name": "apex",
+      "url": "https://www.kaggle.com/code/avioon/kaggriculture-apex-v7-god-emperor?scriptVersionId=347286121",
+      "version": 1,
+      "license": "Apache-2.0",
+      "page_public_score": 2374.5
+    }
+  ],
+  "context": {
+    "leaderboard_url": "https://www.kaggle.com/competitions/kaggriculture/leaderboard",
+    "observed_leader": "ymg_aq",
+    "observed_leader_score": 2873.0,
+    "discussion_url": "https://www.kaggle.com/competitions/kaggriculture/discussion/737788",
+    "staff_reply": "Anything freely and publicly available is fair use.",
+    "limitation": "Notebook scores are page observations, not verified current rank or guarantees. API lastRunTime disagrees with UI recency; preserve raw metadata, version and content hashes."
+  },
+  "frozen_archive_sha256": "79b407d699b5fd39e7b396de8b6fc79b2bc2fb99f427f7e2e7ecd25fbc71fb0b",
+  "development_seeds": [
+    9500109,
+    9500123,
+    9500137,
+    9500151
+  ],
+  "files": {
+    "vendor/apex/main.py": {
+      "sha256": "1f7cd5fb8a16585936d2562a3667f85bb6661688718ef58f73006de66148354a",
+      "bytes": 24996
+    },
+    "vendor/apex/source/include/policy_plugin_abi.hpp": {
+      "sha256": "4eb7647da3660688685a8ff032bd1ada6558605a27ae6b86fc338a91f8b45476",
+      "bytes": 509
+    },
+    "vendor/apex/source/include/runtime_types.hpp": {
+      "sha256": "0010c15079e2114e36b5de8b281375db83f202e769e30b27cc437fc0e3ad11f1",
+      "bytes": 2914
+    },
+    "vendor/apex/source/include/six_day_budget_guard.hpp": {
+      "sha256": "6835d614131c6ca6c57d86e941891d1fea3fa44237f61fd1ab9ac876dd4ebc25",
+      "bytes": 8052
+    },
+    "vendor/apex/source/policy.cpp": {
+      "sha256": "74b5d7e778c0f4a6e2f0e0725077943dbc319b7d0f5ace4c9070a4ae69db51b3",
+      "bytes": 4633
+    },
+    "vendor/apex/source/tape.inc": {
+      "sha256": "30b724c3c905d0c03e4ef38d36f96fb7acbd6abef5371abbedee36ea3717e09f",
+      "bytes": 108478
+    },
+    "vendor/apex/submission_bridge.cpp": {
+      "sha256": "a92ca5b78cae850987a7262122eb83ec9f9a313430e906e1ac08bfe1fd887ff1",
+      "bytes": 5117
+    },
+    "vendor/apex-metadata.json": {
+      "sha256": "6ae2d8d78af9d5878a1a02537d5273b2e82f120be0b9800582b321331bbd9b6a",
+      "bytes": 638
+    },
+    "vendor/apex.ipynb": {
+      "sha256": "8c6db18fafbffdd88e0337246eee2044f3e94f0dd7b9493f2193cdfe1b984913",
+      "bytes": 169622
+    },
+    "vendor/arlene-metadata.json": {
+      "sha256": "a41c596b3588e1c82445438928bade36162fccb54eae76a8d3110edd15223c5a",
+      "bytes": 656
+    },
+    "vendor/arlene.ipynb": {
+      "sha256": "f11c479b388b3cb246f426757280c91cff858ac7dbb2ac7af11f1045fc55f850",
+      "bytes": 66346
+    },
+    "vendor/arlene.py": {
+      "sha256": "1dc166ae2bf0c56a44fac4482f469b8812968c4cb32459cb9860f5077897a7d4",
+      "bytes": 46342
+    }
+  }
+}

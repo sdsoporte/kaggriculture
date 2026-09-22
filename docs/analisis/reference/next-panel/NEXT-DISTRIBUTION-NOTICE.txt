@@ -1,0 +1,10 @@
+Arlene / lynnsakurai: Farming score — a mathematical approach, public notebook version 14.
+https://www.kaggle.com/code/lynnsakurai/farming-score-a-mathematical-approach
+Original source SHA256: 1dc166ae2bf0c56a44fac4482f469b8812968c4cb32459cb9860f5077897a7d4
+Licensed under Apache License 2.0; full license accompanies this distribution.
+The complete production controller, four route tapes, state, switching compatibility,
+service guards and sale scheduling are reused from Arlene, not authored by Commons.
+LARK / Commons packages this source. The separately labeled demand-dairy variant
+appends only a visible-shop milk-glut predicate modification and native entry point;
+the baseline archive contains unchanged original source. No Kaito or Igor policy
+logic is included in these two archives. No leaderboard performance is claimed.

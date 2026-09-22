@@ -1,0 +1,16 @@
+{
+  "consumer": "frozen",
+  "seed": true,
+  "funding": true,
+  "terminal_route": false,
+  "committed": true,
+  "budget_seconds": 1.0,
+  "reserve_seconds": 0.01,
+  "terminal_history": false,
+  "redundant_hire": true,
+  "fourth_quadrant": false,
+  "market_pressure": true,
+  "committed_seed_retry": false,
+  "operating_stock": true,
+  "idle_fertilizer": true
+}
