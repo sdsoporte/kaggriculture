@@ -89,10 +89,10 @@ def main():
         print(f"Error fetching episodes: {e}")
         return
 
-    completed_eps = [ep for ep in episodes if ep.get("type") == "PUBLIC"]
-    print(f"Total episodes: {len(episodes)} | Completed public matches: {len(completed_eps)}\n")
+    public_eps = [e for e in episodes if e.get("type") == "EpisodeType.EPISODE_TYPE_PUBLIC" and e.get("state") == "EpisodeState.COMPLETED"]
+    print(f"Total episodes: {len(episodes)} | Completed public matches: {len(public_eps)}\n")
     
-    if not completed_eps:
+    if not public_eps:
         print("No completed public episodes yet.")
         return
         
@@ -100,7 +100,8 @@ def main():
     print(f"{'Ep ID':>10} | {'Opponent':<24} | {'Our Bank':>10} | {'Opp Bank':>10} | {'Margin':>10} | {'Result':<6}")
     print("-" * 78)
     
-    for ep in completed_eps:
+    for ep in public_eps:
+
         ep_id = ep["id"]
         try:
             res = download_and_parse_episode(ep_id)
