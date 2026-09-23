@@ -1,4 +1,4 @@
-"""Combined monitor for active Kaggle submissions (V9, V8.1, V8, and V7)."""
+"""Combined monitor for active Kaggle submissions (V9.1, V9, V8.1, V8, and V7)."""
 
 import subprocess
 import sys
@@ -6,6 +6,10 @@ import sys
 
 def main():
     print("=" * 78)
+    print("RUNNING V9.1 TELEMETRY MONITOR...")
+    print("=" * 78)
+    subprocess.run([sys.executable, "scripts/monitor_v9_1.py"])
+    print("\n" + "=" * 78)
     print("RUNNING V9 TELEMETRY MONITOR...")
     print("=" * 78)
     subprocess.run([sys.executable, "scripts/monitor_v9.py"])
