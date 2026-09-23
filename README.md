@@ -8,6 +8,8 @@ Phase 1 scope: wheat-only `baseline_v0` ("Walter, fixed") plus the harness.
 Reference ladder agents live in `data/reference-agents/`; research notes in
 `docs/kaggriculture-research.md`.
 
+For current repository operations, agent lineages (V0 through V9.1), Kaggle credentials, telemetry monitoring, and new session onboarding, see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ## Setup
 
 ```bash
