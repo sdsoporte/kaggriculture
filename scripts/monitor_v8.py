@@ -109,7 +109,10 @@ def main():
     print("-" * 78)
     for r in results:
         res_str = "WIN " if r["win"] == 1 else ("TIE " if r["win"] == 0.5 else "LOSS")
-        print(f"{r['ep_id']:10d} | {r['opp_name'][:24]:<24} | {r['our_bank']:9,d} | {r['opp_bank']:9,d} | {r['margin']:+9,d} | {res_str}")
+        our_b = int(r['our_bank'])
+        opp_b = int(r['opp_bank'])
+        mrg = int(r['margin'])
+        print(f"{r['ep_id']:10d} | {r['opp_name'][:24]:<24} | {our_b:9,d} | {opp_b:9,d} | {mrg:+9,d} | {res_str}")
         
     wins = sum(1 for r in results if r["win"] == 1)
     ties = sum(1 for r in results if r["win"] == 0.5)

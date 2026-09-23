@@ -91,8 +91,8 @@ Entry deadline **2026-09-23** · final submission **2026-09-30** (~9 days).
 | 1 | Pilkwang-shaped rule policy (phase machine + job matcher) | No |
 | 2 | Labor scheduler closing the 5%-vs-18% idle gap | No |
 | 3 | Paired-benchmark discipline on every change | No |
-| 4 | Opponent fingerprinting (Role 1) — the cherry | **Yes, offline** |
-| 5 | Distilled micro-model (Role 3) — if time remains | **Yes, offline → distilled** |
+| 4 | Opponent fingerprinting — the cherry | **Yes, offline** |
+| 5 | Distilled micro-model — if time remains | **Yes, distilled** |
 
 Roles 1–3 of the table are the base game; Laya is the accelerator, never the
 foundation.
