@@ -90,12 +90,11 @@ def main():
         print(f"Could not fetch episodes: {e}")
         return
 
-    # Filter to public matches: exactly 2 players, non-empty rewards
-    public_episodes = []
-    for ep in episodes:
-        agents = ep.get("agents", [])
-        if len(agents) == 2 and any(a.get("reward") is not None for a in agents):
-            public_episodes.append(ep)
+    # Filter to completed public matches
+    public_episodes = [
+        e for e in episodes
+        if e.get("type") == "EpisodeType.EPISODE_TYPE_PUBLIC" and e.get("state") == "EpisodeState.COMPLETED"
+    ]
 
     print(f"Total episodes: {len(episodes)} | Completed public matches: {len(public_episodes)}")
     print()
