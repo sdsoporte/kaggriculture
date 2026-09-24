@@ -10,6 +10,9 @@
   "machine_shape": "",
   "dataset_sources": [
     "kaggle/kaggriculture-episodes-index",
+    "kaggle/kaggriculture-episodes-2026-09-16",
+    "kaggle/kaggriculture-episodes-2026-09-17",
+    "kaggle/kaggriculture-episodes-2026-09-18",
     "kaggle/kaggriculture-episodes-2026-09-19",
     "kaggle/kaggriculture-episodes-2026-09-20",
     "kaggle/kaggriculture-episodes-2026-09-21",

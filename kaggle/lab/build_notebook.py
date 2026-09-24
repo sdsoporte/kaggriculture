@@ -295,15 +295,86 @@ if league_path:
     for row in league:
         try:
             games = int(row["games"] or 0)
-            wins_a = int(row["wins_a"] or 0)
         except ValueError:
             continue
-        ranked[row["agent_a"]] += wins_a
-        played[row["agent_a"]] += games
+        # Count BOTH sides: an agent mostly sits in column b, and reading only the
+        # agent_a columns printed five of the ten agents as 0 wins out of 50-odd.
+        for wins_key, name_key in (("wins_a", "agent_a"), ("wins_b", "agent_b")):
+            try:
+                ranked[row[name_key]] += int(row[wins_key] or 0)
+                played[row[name_key]] += games
+            except ValueError:
+                continue
     print("\\nreference league win rate (measured, this is the opponent ladder):")
-    for agent, wins in ranked.most_common():
-        total = max(played[agent], 1)
-        print(f"  {agent:<20} {wins:>5}W / {total:>5}  = {100 * wins / total:>5.1f}%")"""
+    table = sorted(
+        ((100 * wins / max(played[agent], 1), agent, wins, max(played[agent], 1))
+         for agent, wins in ranked.items()),
+        reverse=True,
+    )
+    for rate, agent, wins, total in table:
+        print(f"  {agent:<20} {wins:>5}W / {total:>5}  = {rate:>5.1f}%")"""
+
+OPTIMISER = """# How big can a fertilizer programme be before the last unit stops paying?
+#
+# Assumptions, stated because this is a first-order model: the market sits around
+# I0 (our own sale-time inventories were 9,980-10,075, which supports it), we are
+# the marginal supplier, and the opponent's supply is unchanged. The benchmark is
+# what finally decides; this only sizes the programme.
+demand_path = (find_all("town_shop_demand.csv") or [None])[0]
+FERT_COST = 42.0        # what we forgo by not selling that fertilizer unit
+growth_path = (find_all("crop_growth_trace.csv") or [None])[0]
+
+if demand_path and growth_path and curve:
+    P_UNLOCK = 1 - (7 / 8) ** 8     # 8 draws over 8 shop types, with replacement
+    SHOP_DAYS = 27                  # shops unlock on days 3, 6, ..., 24
+    # The engine's town centre takes ONE unit of each product per 24 turns, flat,
+    # all season. town_center_demand_schedule.csv claims interval 12 with x2/x4
+    # day multipliers - that table is STALE and would overstate the drain 2-8x.
+    CENTRE_SEASON = 1.0 * 30
+
+    shop_rate = collections.Counter()
+    with open(demand_path) as handle:
+        for row in csv.DictReader(handle):
+            if row["source"] == "SHOP":
+                shop_rate[row["product"]] += float(row["units_per_day_if_unlocked"]) * P_UNLOCK
+
+    by_crop = collections.defaultdict(lambda: collections.defaultdict(list))
+    with open(growth_path) as handle:
+        for row in csv.DictReader(handle):
+            by_crop[row["crop"]][row["policy"]].append(float(row["yield_units"] or 0))
+
+    print(f"{'crop':<12}{'drain/szn':>10}{'per appl':>9}{'profitable u':>13}"
+          f"{'appl':>6}{'revenue':>10}{'cost':>8}{'net':>9}")
+    for crop in sorted(by_crop):
+        row = curve.get(crop)
+        plain = by_crop[crop].get("watered_no_fertilizer")
+        fert = by_crop[crop].get("watered_fertilized")
+        if not row or not plain or not fert:
+            continue
+        per_app = int(sum(fert) - sum(plain))
+        if per_app <= 0:
+            continue
+        # The k-th extra unit meets the inventory it helps create, so it is worth
+        # curve(I0 + k). Walk outward until a unit no longer beats the fertilizer.
+        revenue = 0.0
+        units = 0
+        for step in range(1, 600):
+            price = row.get(10000 + step)
+            if price is None or price < FERT_COST:
+                break
+            revenue += price
+            units = step
+        apps = units // per_app
+        drain = shop_rate[crop] * SHOP_DAYS + CENTRE_SEASON
+        print(f"{crop:<12}{drain:>10.0f}{per_app:>9d}{units:>13d}{apps:>6d}"
+              f"{revenue:>10,.0f}{apps * FERT_COST:>8,.0f}"
+              f"{revenue - apps * FERT_COST:>9,.0f}")
+    print()
+    print("'profitable u' = extra units whose marginal price still beats the")
+    print("fertilizer it costs; beyond that the curve has collapsed and the last")
+    print("unit decides the profit, not the average.")
+else:
+    print("town_shop_demand.csv, crop_growth_trace.csv or price_curve.csv not attached")"""
 
 NEXT = """## Next steps
 
@@ -345,6 +416,13 @@ The published growth traces give accumulated yield per policy. The extra units m
 be valued step by step along the curve, because the last unit of a batch is worth
 far less than the first."""),
     code(GROWTH),
+    md("""## How large a fertilizer programme can the market absorb?
+
+Extra production only pays while the marginal unit still beats the fertilizer it
+costs. The market's absorption comes from the shops (each type present with
+probability 65.6%) plus the town centre, and the centre's real rate is one unit per
+product per 24 turns - flat - not the x2/x4 schedule the stale CSV claims."""),
+    code(OPTIMISER),
     md("""## The measured reference league (a diverse opponent ladder)"""),
     code(REFERENCE),
     md(NEXT),
@@ -352,7 +430,17 @@ far less than the first."""),
 
 
 def main():
+    # Compile every code cell before writing, so a broken cell fails HERE instead
+    # of inside a Kaggle run. A stray escape once produced an unterminated string
+    # literal that only surfaced as a PapermillExecutionError after a full push.
     for index, cell in enumerate(CELLS):
+        if cell["cell_type"] != "code":
+            continue
+        source = "".join(cell["source"])
+        try:
+            compile(source, f"<cell {index}>", "exec")
+        except SyntaxError as exc:
+            raise SystemExit(f"cell {index} does not compile: {exc}") from exc
         cell["id"] = f"cell-{index}"  # nbformat 5 wants ids; missing ones warn now, error later
     notebook = {
         "cells": CELLS,
