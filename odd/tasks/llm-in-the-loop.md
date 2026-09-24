@@ -1,0 +1,145 @@
+# LLM in the loop: engine reader, adversarial farmer, planner author
+
+## Goal
+
+Put a model inside the loop in the three places where it can actually change an
+outcome, instead of only asking it to comment on a prose brief. The first two
+attempts (the adversarial review and the economist) both consumed a ~5 KB
+hand-written summary of our own numbers; neither ever saw the engine or a match.
+
+Stage A exists because of a measured failure, not a hunch. The economist
+(gemini-3.7-flash, `kaggriculture-economist` v2) proposed "eliminate the 66
+fertilizer buys" as a **+$5,500 to +$6,600** cash leak. Measured: **-$210**, a
+wash. The engine quotes `BUY_PRODUCT` at the POST-buy inventory explicitly so
+that a buy/sell round trip nets zero (`kaggriculture.py:599-601`). The model could
+not have known: the brief paraphrased the market and omitted that rule. **The
+failure was missing mechanics, not missing data.**
+
+## Stages
+
+- **A — engine reader.** Give a model the COMPLETE engine source and ask for the
+  authoritative rule sheet: per-verb quote rules, every quantity cap, every
+  silently-dropped input, and every mechanic that makes a plausible market
+  strategy illegal or self-cancelling. Output is diffed against our own rule list.
+  Cheap (one push, minutes), and it makes every future brief better.
+- **B — adversarial farmer.** A model plays, through the arena, with the goal of
+  punishing our tape rather than beating it on average. Our whole evaluation
+  problem is that every opponent we have is too weak (10 of 10 published
+  reference agents beaten by $100k+), so any variant of our tape also wins; an
+  adversary is the only new source of pressure available.
+- **C — planner author.** A model authors the offline planner, constrained by the
+  engine rule sheet from A and by the eight measured V10 verdicts, which are hard
+  constraints rather than suggestions. This is the only path to a materially
+  better tape.
+
+## Tasks
+
+- [x] A1 — `kaggle/bench/build_engine_spec.py` generates a self-contained
+      Benchmarks task with the engine source embedded.
+- [x] A2 — Run A on `gemini-3.7-flash` and `claude-opus-4-5`; diff the returned
+      rule sheet against our own list of engine rules and traps.
+- [x] A3 — Fold the deltas into `docs/engine-rule-sheet.md`, a verified rule sheet
+      that is now the appendix for every future brief.
+- [ ] B1 — Arena plumbing: pass the model-proxy credentials into the notebook and
+      prove one LLM call happens inside a match.
+- [ ] B2 — Bounded adversarial farmer: daily decisions only (30 per game), tape as
+      the executor, against our tape, ~20-30 games.
+- [ ] B3 — Harvest the losses: where does our tape get punished, and is it a
+      mechanism we have not closed.
+- [ ] C1 — Planner brief: engine rule sheet (A3) + the eight measured verdicts +
+      the absorption table.
+- [ ] C2 — Planner implementation and paired measurement against the tape.
+
+## Stage A evidence (A1-A3)
+
+### A1 — generator
+
+`kaggle/bench/build_engine_spec.py` embeds the engine source (40,356 chars,
+1,086 lines) into a self-contained task (43,716 chars) instead of hand-copying it,
+so the rule sheet cannot drift away from the engine version. The source is located
+by glob and the script fails closed if the pattern matches zero or several files,
+and refuses to generate if the source ever contains a triple single quote (the
+embedding delimiter). `--check` makes staleness detectable.
+
+### A2 — the diff (both models completed)
+
+Pushed as `ser8147/kaggriculture-engine-spec` version 1 with the default model
+(`gemini-3.7-flash`), then run against `claude-opus-4-5-20251101`. Both returned a
+rule sheet; both **independently converged on the same four mechanics we were
+missing**, which is the strongest signal available from a two-model design:
+
+1. **Atomic PLANT validation** (`:919-931`) - if a turn's total `PLANT` demand for a
+   crop exceeds the seeds held, EVERY `PLANT` of that crop becomes `PASS`. Not a
+   partial plant: the crop is voided for the turn.
+2. **A sale at the $1 floor does not move the market** (`:659-660`,
+   `if price > 1: inventory += 1`). Dumping at the floor is free and cannot crater
+   the opponent's price.
+3. **Movement onto a LOCKED tile is allowed** (`:328-330`); only tile *operations*
+   no-op there.
+4. **A placed animal cannot be removed** (`:484-490`) - `DIG` returns early when the
+   tile holds an animal. This is the structural reason the roster swaps could only
+   ever be payload swaps.
+
+**The models' line numbers are worthless.** `gemini-3.7-flash` cited
+`_process_market (L407)` when the real line is **544**, and stated it flatly with
+no hedge; `claude-opus-4-5` prefixed every reference with `~`. Every row in
+`docs/engine-rule-sheet.md` was therefore re-read by me in the source, and the
+models' numbers were discarded. This is the concrete reason stage A's acceptance
+criterion was a diff rather than an applause: the output is useful and unreliable
+in the same breath.
+
+Both also confirmed the anti-arbitrage rule we had just paid for - `BUY_PRODUCT`
+quoted at `inventory - 1` so a round trip nets zero (`:599-601`) - which is the
+mechanics the economist's brief had omitted.
+
+### A3 — the artifact
+
+`docs/engine-rule-sheet.md`: the four new rules with verified line numbers, the
+full market and physical tables, and the provenance (task, models, generator,
+verification method). It also records one conflation this project made: **MELON's
+watering window is days 6-12 while its harvest window is days 10-12** (`:16`,
+`:440-441`) - both had been called "the melon window".
+
+**The new hypothesis A produced.** The atomic PLANT rule is the only mechanic found
+that can silently destroy work the tape believes it did. Our tape plants ~170 WHEAT
+and 33 STRAWBERRY with hand-timed `BUY_SEED` orders, so any turn whose PLANT demand
+for a crop exceeds stock plants *nothing* for that crop. Measure it read-only from
+traces: per game, the turns where `plant_demand[crop] > seeds[crop]` and the
+plantings lost. This is a measurement, not an overlay, and it is a candidate for the
+next concrete lever.
+
+## Acceptance criteria
+
+- A: the returned rule sheet is **diffed**, not admired. Success is the model
+  naming a rule or trap our own list misses, or naming a wrong one (which is an
+  equally useful finding about the model).
+- B: success is a **punishing line**, not a better average. If the LLM adversary
+  never gets a positive margin, that is evidence our evaluation blind spot is
+  smaller than feared.
+- C: accepted only if paired measurement beats the tape with a CI excluding zero.
+
+## Non-goals
+
+- Not shipping an LLM as the submitted agent. The submission is a single stdlib
+  file with no network at match time, so a model cannot be the player on the
+  ladder. The LLM plays only where we control the environment.
+- Not a per-turn LLM policy: 720 turns x 1 call per game is not affordable, and
+  the proxy rate-limits under load.
+
+## Constraints / risks
+
+- **The model proxy is IP-bound to the Kaggle kernel.** Run logs show
+  `{"status":"BOUND","bound_ip":...}`: the credentials do not work from the
+  workstation, so every stage runs server-side. B additionally needs the
+  credentials handed to a notebook that is not a Benchmarks task.
+- **Six days remain** (2026-09-30). Only C can move the score. A is cheap and
+  enabling; B is an evaluation improvement and must not starve C.
+- **B can produce findings that are interesting and inactionable.** Every overlay
+  lever has died on the tape's structural coupling (the step-150 cash cliff, the
+  per-crop choreography, the saturated slots). An adversary that exploits a
+  structural gap does not imply a fix. The gate after A decides whether B is worth
+  its plumbing.
+
+## Evidence log
+
+Stage A: see "Stage A evidence" above. Stages B and C: filled as they close.
