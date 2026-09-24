@@ -1,0 +1,21 @@
+{
+  "id": "ser8147/kaggriculture-lab",
+  "title": "Kaggriculture Lab",
+  "code_file": "kaggriculture-lab.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "machine_shape": "",
+  "dataset_sources": [
+    "kaggle/kaggriculture-episodes-index",
+    "kaggle/kaggriculture-episodes-2026-09-23",
+    "raykkretzschmar/kaggriculture-reference-agents",
+    "ser8147/kaggriculture-engine-tables"
+  ],
+  "competition_sources": [
+    "kaggriculture"
+  ],
+  "kernel_sources": []
+}
