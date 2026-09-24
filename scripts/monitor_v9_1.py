@@ -5,13 +5,17 @@ with KAG_MONITOR_SUB_ID / KAG_MONITOR_REPLAY_DIR (scripts/monitor_all.py does
 this automatically for whichever submissions are currently active).
 """
 
+import contextlib
 import gzip
 import json
 import os
 import subprocess
 from pathlib import Path
 
-SUB_ID = int(os.environ.get("KAG_MONITOR_SUB_ID", 56501811))
+try:
+    SUB_ID = int(os.environ.get("KAG_MONITOR_SUB_ID", "56501811"))
+except ValueError as exc:  # an operator typo must not surface as a raw import traceback
+    raise SystemExit(f"KAG_MONITOR_SUB_ID must be an integer: {exc}") from exc
 REPLAY_DIR = Path(os.environ.get("KAG_MONITOR_REPLAY_DIR", "scratch/replays_v9_1"))
 REPLAY_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -70,15 +74,11 @@ def compress_cached_replay(path: Path) -> None:
         if restored != original:
             raise ValueError(f"replay compression mismatch for {path}")
     except (OSError, EOFError, ValueError):
-        try:
+        with contextlib.suppress(OSError):
             gz_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         return
-    try:
+    with contextlib.suppress(OSError):
         path.unlink()
-    except OSError:
-        pass
 
 
 def download_and_parse_episode(ep_id: int) -> dict:
@@ -96,13 +96,13 @@ def download_and_parse_episode(ep_id: int) -> dict:
     else:
         with open(target) as f:
             data = json.load(f)
-    
+
     names = data.get("info", {}).get("TeamNames", ["Agent 0", "Agent 1"])
     rewards = data.get("rewards", [0, 0])
-    
+
     p0_name, p1_name = names[0], names[1]
     p0_bank, p1_bank = rewards[0], rewards[1]
-    
+
     if "Sergio D" in p0_name:
         our_bank, opp_bank = p0_bank, p1_bank
         opp_name = p1_name
@@ -112,10 +112,10 @@ def download_and_parse_episode(ep_id: int) -> dict:
     else:
         our_bank, opp_bank = p0_bank, p1_bank
         opp_name = p1_name
-        
+
     margin = our_bank - opp_bank
     res = "WIN" if margin > 0 else "LOSS" if margin < 0 else "TIE"
-    
+
     return {
         "ep_id": ep_id,
         "opp_name": opp_name,
@@ -131,7 +131,7 @@ def main():
     status_line = check_submission()
     print("Status:", status_line)
     print()
-    
+
     try:
         episodes = get_episodes()
     except Exception as e:
@@ -146,7 +146,7 @@ def main():
 
     print(f"Total episodes: {len(episodes)} | Completed public matches: {len(public_episodes)}")
     print()
-    
+
     if not public_episodes:
         print("No completed public matches yet.")
         return
@@ -154,7 +154,7 @@ def main():
     records = []
     print(f"{'Ep ID':>10} | {'Opponent':<24} | {'Our Bank':>10} | {'Opp Bank':>10} | {'Margin':>10} | Result")
     print("-" * 78)
-    
+
     for ep in public_episodes:
         ep_id = ep["id"]
         try:
@@ -166,8 +166,6 @@ def main():
 
     if records:
         wins = sum(1 for r in records if r["result"] == "WIN")
-        losses = sum(1 for r in records if r["result"] == "LOSS")
-        ties = sum(1 for r in records if r["result"] == "TIE")
         tot = len(records)
         mean_bank = sum(r["our_bank"] for r in records) / tot
         mean_margin = sum(r["margin"] for r in records) / tot
