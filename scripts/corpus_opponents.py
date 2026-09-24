@@ -205,6 +205,8 @@ def run_measurement(args):
     rows = []
     suspicious = []
     all_margins = []
+    all_our_banks = []
+    all_their_banks = []
     total_games = 0
     total_wins = 0
     seat_games = {0: 0, 1: 0}
@@ -232,6 +234,8 @@ def run_measurement(args):
         our_banks = [g["our_bank"] for g in games]
         their_banks = [g["their_bank"] for g in games]
         all_margins.extend(margins)
+        all_our_banks.extend(our_banks)
+        all_their_banks.extend(their_banks)
         total_games += len(games)
         total_wins += wins
         for g in games:
@@ -282,6 +286,8 @@ def run_measurement(args):
         print(f"OVERALL: games={total_games} wins={total_wins} "
               f"win_rate={rate:.3f}  95% Wilson CI [{lo:.3f}, {hi:.3f}]")
         print(f"mean margin across all games: {_mean(all_margins):,.1f}")
+        print(f"mean our bank: {_mean(all_our_banks):,.1f}   "
+              f"mean their bank: {_mean(all_their_banks):,.1f}")
         print("  by seat (our agent on seat 0 / seat 1):")
         for seat in (0, 1):
             if seat_games[seat]:
