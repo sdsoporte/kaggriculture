@@ -217,6 +217,33 @@ not pass it (T2 landing gate, plus the null-swap proof of the wrapper). Three
 variants, 72 paired games, zero escapes, zero landing failures - and a clean no.
 That is worth more than a hopeful submission.
 
+## V10 closure (2026-09-24)
+
+Six levers tested, six measured verdicts. Nothing shipped; the incumbent pair stays.
+
+| # | lever | verdict | evidence |
+| --- | --- | --- | --- |
+| 1 | roster mix | refuted | cow 10W-14L -$9,072; sheep 12W-12L +$1,933; goose 10W-14L -$1,998 (24 paired games each) |
+| 2 | capacity / more animals | infeasible | tape saturated: 0 free structure slots, 7.4% idle worker turns, cash-coupled early economy |
+| 3 | sell-lot chunking | lost | 0W-24L twice: -$61,832 from step 0, -$5,049 from day 12 |
+| 4 | fertilizer programme | no headroom | the tape's existing fertilizing IS profitable (+$3,078/game, reproduced independently, p~0.014 on ~4 effective seeds) but a marginal application costs ~$5 in a glutted market (the town never consumes fertilizer) |
+| 5 | buy-timing arbitrage | dead 6x | ceiling +$81/game with PERFECT foresight, against the review's own $500 bar; wheat's price curve is flat |
+| 6 | fertilize melon | **$0** | 24/24 melon tiles reach max_yield 6 WITHOUT fertilizer and harvest at exactly 6; and a FIXED tape cannot monetise earlier maturation because the replanting turns are hardcoded |
+
+**Conclusion**: the tape sits at a local optimum in every dimension measurable with
+the tools we have. The only remaining path to a real gain is an offline planner that
+bakes a new tape (4 quadrants, ~20-24 animals), which attacks the structural gap the
+profiling showed and which no overlay can reach - with no guarantee in the ~6 days
+left before the 2026-09-30 deadline.
+
+**Standing at closure**: `56513137` (V8 recovery) converged to ~1232,`56501811`
+(V9.1) to ~1194. The recovery therefore delivered roughly +38 Elo over leaving V9.1
+as the best of the pair. Displayed score = the max of the two.
+
+Related records: `odd/tasks/v10-sell-policy.md` (lever 3), Engram
+`kaggriculture/v10-*` for the full evidence chain, and `kaggle/lab/` for the
+corpus-analysis workbench built along the way.
+
 ## Constraints / non-goals
 
 - **The tape cannot be regenerated.** Verified: `_BLOB` is base64+zlib JSON, there
