@@ -1,12 +1,18 @@
-"""Monitor production submission 56471176 (baseline_v7) on Kaggle."""
+"""Monitor the baseline_v7 lineage on Kaggle.
+
+Defaults to the original production submission; override SUB_ID and REPLAY_DIR
+with KAG_MONITOR_SUB_ID / KAG_MONITOR_REPLAY_DIR (scripts/monitor_all.py does
+this automatically for whichever submissions are currently active).
+"""
 
 import gzip
 import json
-from pathlib import Path
+import os
 import subprocess
+from pathlib import Path
 
-SUB_ID = 56471176
-REPLAY_DIR = Path("scratch/replays_v7")
+SUB_ID = int(os.environ.get("KAG_MONITOR_SUB_ID", 56471176))
+REPLAY_DIR = Path(os.environ.get("KAG_MONITOR_REPLAY_DIR", "scratch/replays_v7"))
 REPLAY_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -39,7 +45,13 @@ def check_submission():
 
 def get_episodes() -> list[dict]:
     out = run_cmd([".venv/bin/kaggle", "competitions", "episodes", str(SUB_ID), "--format", "json"])
-    return clean_json_output(out)
+    episodes = clean_json_output(out)
+    if not isinstance(episodes, list):
+        raise TypeError(
+            f"expected an episode list for submission {SUB_ID}, "
+            f"got {type(episodes).__name__}"
+        )
+    return episodes
 
 
 def compress_cached_replay(path: Path) -> None:
