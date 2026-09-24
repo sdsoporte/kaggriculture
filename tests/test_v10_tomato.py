@@ -51,9 +51,10 @@ def test_plant_swap_keeps_the_verb():
 
     assert action["farmer"] == ["PLANT", "TOMATO"], action
     assert action["hands"][0] == ["PLANT", "TOMATO"], action
-    # The seed order splits: one unit to the target, the rest stays with the source.
-    assert ["BUY_SEED", "TOMATO", 1] in action["market"], action["market"]
-    assert ["BUY_SEED", "WHEAT", 9] in action["market"], action["market"]
+    # The seed order splits by the remaining budget (max_swaps=2 here): two units
+    # move to the target crop and the rest stays with the source.
+    assert ["BUY_SEED", "TOMATO", 2] in action["market"], action["market"]
+    assert ["BUY_SEED", "WHEAT", 8] in action["market"], action["market"]
 
 
 def test_budget_bounds_the_swaps():
