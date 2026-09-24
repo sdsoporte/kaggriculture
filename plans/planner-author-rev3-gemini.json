@@ -1,0 +1,18 @@
+{
+  "schema": "kaggriculture-plan/3",
+  "land": {"quadrants": 3, "buy_days": [1, 6]},
+  "hands": {"start": 4, "ramp_step": 1, "daily_target": 12},
+  "crops": [
+    {"crop": "WHEAT", "tiles": 28, "plant_days": [0, 5, 10, 15, 20, 25], "fertilize_tiles": 0},
+    {"crop": "CARROT", "tiles": 8, "plant_days": [1, 6, 12, 18, 24], "fertilize_tiles": 2},
+    {"crop": "TOMATO", "tiles": 6, "plant_days": [1], "fertilize_tiles": 0},
+    {"crop": "STRAWBERRY", "tiles": 18, "plant_days": [1, 3, 5], "fertilize_tiles": 16},
+    {"crop": "MELON", "tiles": 6, "plant_days": [0, 12], "fertilize_tiles": 0}
+  ],
+  "animals": [
+    {"animal": "COW", "count": 4, "buy_days": [3, 4, 5, 6]},
+    {"animal": "SHEEP", "count": 3, "buy_days": [7, 8, 9]},
+    {"animal": "GOOSE", "count": 2, "buy_days": [10, 11]}
+  ],
+  "market": {"sell_chunk_cap": 0, "sell_from_day": 12, "seed_reserve": 24}
+}
