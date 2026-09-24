@@ -25,18 +25,12 @@ import collections
 import math
 from pathlib import Path
 
+from kaggriculture.loading import current_step as _current_step
 from kaggriculture.loading import load_agent
 
 MAX_ORDERS = 10  # engine: maxMarketOrdersPerTurn, extras silently dropped
 LAST_EFFECTIVE_TURN = 717  # engine: episodeSteps 720, DONE at step >= 718
 _BASELINE = Path(__file__).with_name("baseline_v8.py")
-
-
-def _current_step(obs):
-    raw = obs.get("step")
-    if raw is not None:
-        return int(raw)
-    return int(obs.get("day", 0)) * 24 + int(obs.get("hour", 0))
 
 
 def make_agent(chunk=4, max_backlog=30, from_step=0):
@@ -85,7 +79,13 @@ def make_agent(chunk=4, max_backlog=30, from_step=0):
         kept = []
         for order in market:
             if len(order) >= 3 and order[0] == "SELL" and isinstance(order[1], str):
-                want = int(order[2])
+                try:
+                    want = int(order[2])
+                except (TypeError, ValueError):
+                    # Unparseable quantity: pass the order through untouched rather
+                    # than taking the agent out of the match.
+                    kept.append(order)
+                    continue
                 if want > cap:
                     backlog[order[1]] += want - cap
                     want = cap

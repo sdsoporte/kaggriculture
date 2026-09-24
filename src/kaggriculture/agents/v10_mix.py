@@ -36,6 +36,7 @@ Two engine facts make the swap safe:
 
 from pathlib import Path
 
+from kaggriculture.loading import current_step as _current_step
 from kaggriculture.loading import load_agent
 
 ANIMALS = ("COW", "SHEEP", "GOOSE")
@@ -77,14 +78,6 @@ def _swap_market(
         else:
             swapped.append(order)
     return swapped
-
-
-def _current_step(obs):
-    """Turn index, the same way the tape agents derive it."""
-    raw = obs.get("step")
-    if raw is not None:
-        return int(raw)
-    return int(obs.get("day", 0)) * 24 + int(obs.get("hour", 0))
 
 
 def make_agent(

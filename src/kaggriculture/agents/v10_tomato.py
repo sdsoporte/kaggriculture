@@ -35,16 +35,10 @@ monetise it at all.
 from collections.abc import Callable
 from pathlib import Path
 
+from kaggriculture.loading import current_step as _current_step
 from kaggriculture.loading import load_agent
 
 _BASELINE = Path(__file__).with_name("baseline_v8.py")
-
-
-def _current_step(obs):
-    raw = obs.get("step")
-    if raw is not None:
-        return int(raw)
-    return int(obs.get("day", 0)) * 24 + int(obs.get("hour", 0))
 
 
 def make_agent(
@@ -103,7 +97,13 @@ def make_agent(
                 and order[0] == "BUY_SEED"
                 and order[1] == source
             ):
-                want = int(order[2])
+                try:
+                    want = int(order[2])
+                except (TypeError, ValueError):
+                    # Unparseable quantity: pass the order through untouched rather
+                    # than taking the agent out of the match.
+                    market.append(order)
+                    continue
                 take = max(0, min(want, max_swaps - state["seeds"]))
                 if take:
                     # Split the order so the total seed count is unchanged and only
