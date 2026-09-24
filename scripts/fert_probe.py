@@ -92,6 +92,7 @@ def measure(trace, seat):
     revenue = spend = fert_sold = fert_applied = 0
     prev_money = None
     prev_held = None
+    prev_action = None
     for turn in trace:
         entry = turn[seat]   # the replay is steps[turn][seat] - not steps[seat].
         # Getting this backwards is the single most repeated bug in this project:
@@ -119,9 +120,13 @@ def measure(trace, seat):
                 if gain > 0:
                     harvested[crop] += gain
             dropped = prev_held.get("FERTILIZER", 0) - held.get("FERTILIZER", 0)
-            if dropped > 0 and "SELL" in sell_verbs(action):
+            # The drop between turn t-1 and t was caused by turn t-1's action, so the
+            # SELL test must use the PREVIOUS action. Testing the current one (as an
+            # earlier version did) undercounts sold fertilizer by ~17%, which an
+            # independent verification caught.
+            if dropped > 0 and "SELL" in sell_verbs(prev_action):
                 fert_sold += dropped
-        prev_money, prev_held = money, held
+        prev_money, prev_held, prev_action = money, held, action
     return {"harvested": harvested, "revenue": revenue, "spend": spend,
             "fert_sold": fert_sold, "fert_applied": fert_applied}
 
