@@ -7,6 +7,7 @@ as pure functions.
 """
 
 import pytest
+from kaggle_environments.envs.kaggriculture.kaggriculture import CROPS
 
 from kaggriculture.agents.param_agent import (
     MAX_ORDERS,
@@ -298,6 +299,17 @@ def test_a_zero_cap_means_no_throttle_at_any_day():
     assert ["SELL", "WHEAT", 50] in orders
 
 
+def test_wheat_is_reserved_for_the_days_feed_before_it_is_sold():
+    # Invariant 6: selling the last wheat starves the herd. The agent reserves one
+    # unit per unfed animal from the sell queue; unit actions run before the market,
+    # so a worker can still pick the reserved wheat up and feed.
+    plan = plan_v3()
+    orders = plan_market_orders(plan, ctx(day=5, held={"WHEAT": 10}, feed_reserve=3))
+    assert ["SELL", "WHEAT", 7] in orders
+    assert ["SELL", "WHEAT", 10] in plan_market_orders(
+        plan, ctx(day=5, held={"WHEAT": 10}, feed_reserve=0))
+
+
 def test_seeds_are_topped_up_to_the_reserve_only_for_planted_crops():
     plan = plan_v3()
     orders = plan_market_orders(plan, ctx(money=5000, seeds={}, day=0))
@@ -310,6 +322,27 @@ def test_seed_buying_stops_once_the_reserve_is_met():
     plan = plan_v3()
     orders = plan_market_orders(plan, ctx(money=5000, seeds={"WHEAT": 4}, day=0))
     assert not [o for o in orders if o[0] == "BUY_SEED" and o[1] == "WHEAT"]
+
+
+def test_seeds_are_not_bought_for_a_crop_whose_planting_is_not_imminent():
+    # plan_v3's WHEAT plants on days 0 and 8 with a horizon of 2. On day 3 the next
+    # planting is neither today nor imminent, so the top-up must not fire - the
+    # original bug re-bought every crop up to the reserve on every turn.
+    plan = plan_v3()
+    orders = plan_market_orders(plan, ctx(money=5000, seeds={}, day=3))
+    assert not [o for o in orders if o[0] == "BUY_SEED" and o[1] == "WHEAT"]
+    imminent = plan_market_orders(plan, ctx(money=5000, seeds={}, day=6))
+    assert [o for o in imminent if o[0] == "BUY_SEED" and o[1] == "WHEAT"]  # day 8 is within 2
+
+
+def test_seed_spend_is_capped_at_half_the_spendable_cash():
+    # The second half of the seed gate. The crop ordering is WHEAT, CARROT, TOMATO,
+    # STRAWBERRY, MELON, so with $1,000 spendable the $500 budget can fund WHEAT,
+    # CARROT and MELON but never STRAWBERRY's $400 on top of them.
+    plan = plan_v3()
+    orders = plan_market_orders(plan, ctx(money=1000, seeds={}, day=0))
+    cost = sum(CROPS[o[1]]["seed"] * o[2] for o in orders if o[0] == "BUY_SEED")
+    assert cost <= 500
 
 
 # --- invariant 8: the shed, and the animal roster ---------------------------- #
@@ -342,6 +375,18 @@ def test_hires_are_issued_to_close_the_gap_and_stop_when_funded_out():
     assert [o for o in orders if o[0] == "HIRE"]  # gap exists, money is ample
     broke = plan_market_orders(plan, ctx(day=2, money=0, hands_now=0))
     assert not [o for o in broke if o[0] == "HIRE"]
+
+
+def test_hires_are_exempt_from_the_cash_floor_that_blocks_other_spending():
+    # Before the step-150 cliff the floor holds the next land price, but a roster below
+    # the target must still be funded: with the floor applied to everything, an agent
+    # whose cash fell below it could not hire, could not buy seed, and deadlocked with
+    # no income while its crops died.
+    plan = plan_v3()
+    orders = plan_market_orders(plan, ctx(step=100, day=1, money=1000,
+                                         unlocked_quadrants=1, hands_now=0))
+    assert [o for o in orders if o[0] == "HIRE"]
+    assert not [o for o in orders if o[0] in ("BUY_SEED", "BUY_ANIMAL")]
 
 
 def test_the_hire_price_matches_the_engines_fibonacci_and_the_12_hand_roster():

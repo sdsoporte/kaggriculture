@@ -1,4 +1,4 @@
-"""Consume a `kaggriculture-plan/2` vector: realise the season against live state.
+"""Consume a `kaggriculture-plan/3` vector: realise the season against live state.
 
 The contract is `docs/planner-parameter-schema.md`, and it says something easy to
 get wrong: **every field is a season-level target or calendar, never a script.**
@@ -201,6 +201,28 @@ def water_window_ok(crop, age_days):
     return start <= age_days <= data["max_yield_day"]
 
 
+def needs_water(crop, age_days, watered_today, consecutive_unwatered):
+    """Whether a plant must be watered today. Two jobs, only one window-gated.
+
+    Invariant 3 is a statement about the **growth bonus**: the engine only adds
+    yield when `WATER` lands inside `[(max_yield_day + 1) // 2, max_yield_day]`
+    (`kaggriculture.py:440-441`). It is NOT permission to skip watering outside
+    that window, because `WATER` also clears the weed clock: `_daily_refresh_plants`
+    turns a plant into a WEED after two consecutive unwatered midnights, and
+    `_new_plant` starts `consecutive_unwatered` at 1 with the comment "planting day
+    counts as unwatered". So a crop watered only inside its window is already a
+    weed before the window opens: measured on the broken agent, day 0 planted 15
+    tiles with 0 WATER actions and day 1 dug all 15, so the season produced nothing
+    and the seed and hire spend could only drain the bank to $0.
+
+    The tape settles the intent: it plants 19 and waters 19 on day 0, i.e. it
+    waters on the planting day, outside every growth window.
+    """
+    if watered_today:
+        return False
+    return water_window_ok(crop, age_days) or consecutive_unwatered >= 1
+
+
 def harvest_ready(tile, day):
     """Invariant 5: harvest only what is actually ready and inside its window."""
     if not isinstance(tile, dict) or tile.get("yield_units", 0) <= 0:
@@ -214,6 +236,35 @@ def harvest_ready(tile, day):
     if data is None:
         return False
     return day - tile.get("planted_day", day) >= data["first_yield_day"]
+
+
+def harvest_due(tile, day):
+    """Whether to spend this turn harvesting rather than still growing the crop.
+
+    `harvest_ready` says the crop CAN be harvested; this says harvesting now is the
+    right call. For an animal or an ongoing crop it is the same thing. For a
+    one-shot crop the engine pays the growth bonus only inside the watering window
+    (`kaggriculture.py:440-441`), so harvesting on `first_yield_day` throws most of
+    the yield away: a WHEAT tile watered through days 2-4 fetches 4-6 units while
+    harvesting on day 2 fetches 1. Measured on the season, harvesting at
+    `first_yield_day` turned ~13 tiles into ~13 units per cycle, so revenue (~$2.5k)
+    never covered the seed, hire and animal spend (~$5.5k) and the bank ended at $0.
+
+    The one-turn grace at the cap matters: on the maturity day the tile is still
+    unwatered, so this returns False, the board waters it, and only the following
+    turn harvests it - the day's bonus is banked, not discarded.
+    """
+    if not harvest_ready(tile, day):
+        return False
+    data = CROPS.get(tile.get("crop"))
+    if data is None or data["ongoing"]:
+        return True
+    age = day - tile.get("planted_day", day)
+    if (water_window_ok(tile["crop"], age) and not tile.get("watered_today", False)
+            and tile.get("yield_units", 0) < data["max_yield"]):
+        return False
+    return (tile.get("yield_units", 0) >= data["max_yield"]
+            or age >= data["max_yield_day"])
 
 
 def plantable_jobs(plan, day, seeds, empty_tiles, assigned_crops):
@@ -339,8 +390,15 @@ def plan_market_orders(plan, ctx):
 
     cap = plan["market"]["sell_chunk_cap"]
     before_animals = ctx["day"] < plan["market"]["sell_from_day"]
+    feed_reserve = int(ctx.get("feed_reserve", 0))
     for item in PRODUCTS:
         quantity = ctx["held"].get(item, 0)
+        if item == "WHEAT" and feed_reserve > 0:
+            # Feed every animal every day (invariant 6). Selling the last wheat
+            # starves the herd, so the day's feed is taken off the market before the
+            # sell queue is built; unit actions run before the market, so a worker
+            # can still pick this wheat up and feed.
+            quantity = max(0, quantity - feed_reserve)
         if quantity <= 0:
             continue
         chunk = quantity if (cap == 0 or before_animals) else min(cap, quantity)
@@ -393,6 +451,25 @@ def shed_access_tiles():
 def structure_slots(plan):
     """Tiles the plan needs for animal structures. Animals are IRREMOVABLE."""
     return sum(entry["count"] for entry in plan["animals"])
+
+
+def structure_plan(plan, targets):
+    """Every planned structure as ``(pos, animal)``, in the plan's own order.
+
+    `assign_targets` decides *which* tiles are reserved for structures but not which
+    animal goes where. The mapping has to track the reservation order (row-major) so
+    a structure is built where the plan's tile budget already counted it.
+    """
+    positions = sorted(targets[0], key=lambda p: (p[1], p[0]))
+    out = []
+    cursor = 0
+    for entry in plan["animals"]:
+        for _ in range(entry["count"]):
+            if cursor >= len(positions):
+                return out
+            out.append((positions[cursor], entry["animal"]))
+            cursor += 1
+    return out
 
 
 def assign_targets(plan, obs, board_size=BOARD_SIZE):
@@ -449,7 +526,7 @@ def build_jobs(plan, obs, day, targets, seeds):
     _, crops = targets
     tiles = obs_tiles(obs)
     jobs = {"feed": [], "water": [], "harvest": [], "plant": [],
-            "collect": [], "build": [], "dig": []}
+            "collect": [], "build": [], "place": [], "dig": []}
 
     for y, row in enumerate(tiles):
         for x, cell in enumerate(row):
@@ -464,13 +541,13 @@ def build_jobs(plan, obs, day, targets, seeds):
                     jobs["harvest"].append(pos)
                 jobs["collect"].append(pos)
             elif cell.get("kind") == "PLANT":
-                if harvest_ready(cell, day):
+                age = day - cell.get("planted_day", day)
+                if harvest_due(cell, day):
                     jobs["harvest"].append(pos)
-                else:
-                    age = day - cell.get("planted_day", day)
-                    if (not cell.get("watered_today", False)
-                            and water_window_ok(cell.get("crop"), age)):
-                        jobs["water"].append(pos)
+                elif needs_water(cell.get("crop"), age,
+                                 bool(cell.get("watered_today", False)),
+                                 int(cell.get("consecutive_unwatered", 0))):
+                    jobs["water"].append(pos)
             elif cell.get("kind") == "WEED":
                 jobs["dig"].append(pos)
 
@@ -485,6 +562,18 @@ def build_jobs(plan, obs, day, targets, seeds):
             if tiles[pos[1]][pos[0]] is None:
                 jobs["plant"].append((pos, crop))
                 available[crop] -= 1
+
+    # Animal realization. Buying an animal only drops it in the shed, so a planned
+    # structure has to be BUILT, then the animal PICKED UP and PLACED on it. Without
+    # both steps every BUY_ANIMAL was a guaranteed loss: measured, 5 animals bought
+    # in a season, 0 placed, 0 animal products sold, $1,900 spent.
+    for pos, animal in structure_plan(plan, targets):
+        cell = tiles[pos[1]][pos[0]]
+        structure = ANIMALS[animal]["structure"]
+        if cell is None:
+            jobs["build"].append((pos, "BUILD_COOP" if structure == "COOP" else "BUILD_PASTURE"))
+        elif isinstance(cell, dict) and cell.get("kind") == structure and "animal" not in cell:
+            jobs["place"].append((pos, animal))
 
     for kind in jobs:
         jobs[kind].sort()
@@ -508,15 +597,26 @@ def worker_actions(plan, obs, day, targets, jobs):
 
     claimed = set()
     order = GENERIC_JOB_ORDER
+    animals = tuple(ANIMAL_PRODUCT)
     actions = []
     for index, pos in enumerate(positions):
         inventory = inventories[index] if index < len(inventories) else {}
-        carrying_wheat = (inventory or {}).get("WHEAT", 0) > 0
+        carrying = inventory or {}
+        carrying_wheat = carrying.get("WHEAT", 0) > 0
+        carried_animal = next((a for a in animals if carrying.get(a, 0) > 0), None)
         available_feed = [p for p in jobs["feed"] if p not in claimed]
+        place_jobs = [(p, a) for (p, a) in jobs["place"] if p not in claimed]
 
         if available_feed and carrying_wheat and day >= 4:
             target = min(available_feed, key=lambda p: (_dist(pos, p), p))
             action = ["FEED"]
+        elif carried_animal is not None:
+            spots = [p for (p, a) in place_jobs if a == carried_animal]
+            if spots:
+                target = min(spots, key=lambda p: (_dist(pos, p), p))
+                action = ["PLACE", carried_animal]
+            else:
+                target, action = _generic(pos, jobs, claimed, order)
         elif available_feed and not carrying_wheat and shed.get("WHEAT", 0) > 0:
             sheds = [p for p in shed_access_tiles() if p not in claimed]
             if sheds:
@@ -525,7 +625,13 @@ def worker_actions(plan, obs, day, targets, jobs):
             else:
                 target, action = _generic(pos, jobs, claimed, order)
         else:
-            target, action = _generic(pos, jobs, claimed, order)
+            wanted = [a for (p, a) in place_jobs if shed.get(a, 0) > 0]
+            sheds = [p for p in shed_access_tiles() if p not in claimed]
+            if wanted and sheds:
+                target = min(sheds, key=lambda p: (_dist(pos, p), p))
+                action = ["PICKUP", wanted[0]]
+            else:
+                target, action = _generic(pos, jobs, claimed, order)
 
         if target is None:
             actions.append(["PASS"])
@@ -565,6 +671,8 @@ def _action_for(kind, entry):
     """
     if kind == "plant":
         return ["PLANT", entry[1]]
+    if kind == "build":
+        return [entry[1]]  # BUILD_COOP / BUILD_PASTURE is the entry
     return list(_ACTION[kind])
 
 
@@ -591,12 +699,14 @@ _ACTION = {
     "collect": ["COLLECT_FERTILIZER"],
     "dig": ["DIG"],
     "feed": ["FEED"],
+    "build": ["BUILD_PASTURE"],  # payload replaced by the entry in `_action_for`
     "pickup": ["PICKUP", "WHEAT"],
 }
 
-# The priority order for a generic worker. Feeding is absent on purpose: it needs
-# the carry chain (pick wheat up), so it is handled before the board is consulted.
-GENERIC_JOB_ORDER = ("water", "harvest", "plant", "collect", "dig")
+# The priority order for a generic worker. Feeding and placing are absent on purpose:
+# both need a carry chain (pick the item up first), so they are handled before the
+# board is consulted.
+GENERIC_JOB_ORDER = ("water", "harvest", "plant", "build", "collect", "dig")
 
 
 # --------------------------------------------------------------------------- #
@@ -606,11 +716,11 @@ GENERIC_JOB_ORDER = ("water", "harvest", "plant", "collect", "dig")
 class Agent:
     """Realise a plan against live state. One instance per seat per episode.
 
-    This revision implements the MARKET layer (land, seeds, animals, hires, sells)
-    and nothing else: workers PASS. That is deliberate and visible. The worker job
-    board - plant, water, harvest, feed, with the pickup trips that FEED requires
-    because it consumes an item the worker carries - is the next increment, and it
-    is what W2c's consistency check will measure.
+    The market layer (land, seeds, animals, hires, sells) is built on the pure
+    invariant functions above, and the worker job board adds plant, water, harvest,
+    feed, collect, dig, build and place. Two chains are carried by hand rather than
+    read off the board because the engine consumes an item the worker carries: FEED
+    needs wheat from the shed, and PLACE needs the animal bought into the shed.
     """
 
     def __init__(self, plan):
@@ -628,6 +738,12 @@ class Agent:
         farm = farm_of(obs)
         private = obs.get("private") or {}
         held = held_of(obs)
+        # Invariant 6: feed the herd every day. The reserve is the plan's full herd
+        # size, not the count of animals unfed right now, because the wheat has to be
+        # held BEFORE the animal is placed: measured, reserving only the currently
+        # unfed count sold the wheat on the placement turn and every animal escaped
+        # unfed (yield stayed 0 for all 9 animals, all season).
+        feed_reserve = structure_slots(self.plan)
         ctx = {
             "step": step,
             "day": day,
@@ -639,6 +755,7 @@ class Agent:
             "shed_free": max(0, SHED_CAPACITY - sum(held.values())),
             "bought": self._bought,
             "held": held,
+            "feed_reserve": feed_reserve,
         }
         orders = plan_market_orders(self.plan, ctx)
         for order in orders:

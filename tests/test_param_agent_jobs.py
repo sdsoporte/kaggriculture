@@ -6,8 +6,8 @@ silent (the engine no-ops an invalid action) and would otherwise look like bad l
 """
 
 from kaggriculture.agents.param_agent import (
-    GENERIC_JOB_ORDER,
     _ACTION,
+    GENERIC_JOB_ORDER,
     _action_for,
     assign_targets,
     build_jobs,
@@ -50,6 +50,15 @@ def board(open_all=True, placements=()):
     for x, y, cell in placements:
         rows[y][x] = cell
     return rows
+
+
+# A plan that reserves no structure tiles: for tests that care only about crops or
+# feed jobs and must not also see a BUILD job on a reserved structure slot.
+NO_STRUCTURES = [
+    {"animal": "COW", "count": 0, "buy_days": []},
+    {"animal": "SHEEP", "count": 0, "buy_days": []},
+    {"animal": "GOOSE", "count": 0, "buy_days": []},
+]
 
 
 def obs(tiles, *, farmer=(0, 0), hands=(), shed=None, inventories=None, seeds=None, money=3000):
@@ -176,15 +185,83 @@ def test_only_ready_crops_get_harvest_jobs():
     assert jobs["harvest"] == [(0, 0)]
 
 
-def test_watering_is_only_asked_inside_the_crops_window():
-    # WHEAT waters on days 2-4; MELON on days 6-12. A day-1 wheat is outside.
+def test_a_ready_wheat_in_its_window_is_watered_before_it_is_harvested():
+    # `harvest_ready` is true on day 2, but the growth window runs to day 4: watering
+    # now is worth 1-3 more units. Harvesting at first_yield_day is what kept revenue
+    # below spend, so the board takes the window bonus first.
     tiles = board(placements=[
-        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 0,
-                "watered_today": False}),
+        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 1,
+                "watered_today": False, "consecutive_unwatered": 0}),
     ])
     p = plan()
-    early = build_jobs(p, obs(tiles), day=1, targets=assign_targets(p, obs(tiles)), seeds={})
-    assert early["water"] == []
+    jobs = build_jobs(p, obs(tiles), day=2, targets=assign_targets(p, obs(tiles)), seeds={})
+    assert jobs["water"] == [(0, 0)]
+    assert jobs["harvest"] == []
+
+
+def test_a_wheat_that_already_took_its_last_watering_is_harvested():
+    tiles = board(placements=[
+        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 4,
+                "watered_today": True, "consecutive_unwatered": 0}),
+    ])
+    p = plan()
+    jobs = build_jobs(p, obs(tiles), day=4, targets=assign_targets(p, obs(tiles)), seeds={})
+    assert jobs["harvest"] == [(0, 0)]
+    assert jobs["water"] == []
+
+
+def test_an_ongoing_crop_is_harvested_as_soon_as_ready():
+    tiles = board(placements=[
+        (0, 0, {"kind": "PLANT", "crop": "TOMATO", "planted_day": 0, "yield_units": 1,
+                "watered_today": False, "consecutive_unwatered": 0}),
+    ])
+    p = plan()
+    jobs = build_jobs(p, obs(tiles), day=8, targets=assign_targets(p, obs(tiles)), seeds={})
+    assert jobs["harvest"] == [(0, 0)]
+
+
+def test_a_freshly_planted_crop_is_watered_on_its_planting_day():
+    # The engine's `_new_plant` starts `consecutive_unwatered` at 1 ("planting day
+    # counts as unwatered") and `_daily_refresh_plants` turns the tile into a WEED
+    # at >= 2, so a crop that is not watered on its planting day is dug the next
+    # morning. This is the drain: the old board only watered inside the growth
+    # window (WHEAT days 2-4), so every planting weeded before it could ever be
+    # watered and the season produced nothing. Measured on the broken agent: day 0
+    # planted 15 with 0 WATER and day 1 dug 15.
+    tiles = board(placements=[
+        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 1,
+                "watered_today": False, "consecutive_unwatered": 1}),
+    ])
+    p = plan()
+    jobs = build_jobs(p, obs(tiles), day=0, targets=assign_targets(p, obs(tiles)), seeds={})
+    assert jobs["water"] == [(0, 0)]
+
+
+def test_watering_outside_the_window_only_when_weeds_threaten():
+    # Outside the window WATER has no growth effect, but the engine still weeds a
+    # plant after two unwatered midnights. A plant watered today (clock 0) is safe
+    # to skip; one that would reach 2 tonight must be watered.
+    p = plan()
+    safe = board(placements=[
+        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 0,
+                "watered_today": False, "consecutive_unwatered": 0}),
+    ])
+    at_risk = board(placements=[
+        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 0,
+                "watered_today": False, "consecutive_unwatered": 1}),
+    ])
+    assert build_jobs(p, obs(safe), day=1, targets=assign_targets(p, obs(safe)), seeds={})["water"] == []
+    assert build_jobs(p, obs(at_risk), day=1, targets=assign_targets(p, obs(at_risk)), seeds={})["water"] == [(0, 0)]
+
+
+def test_watering_is_always_asked_inside_the_crops_window():
+    # WHEAT benefits on days 2-4; MELON on days 6-12. Inside the window the growth
+    # bonus is the reason to water, weed risk or not.
+    tiles = board(placements=[
+        (0, 0, {"kind": "PLANT", "crop": "WHEAT", "planted_day": 0, "yield_units": 0,
+                "watered_today": False, "consecutive_unwatered": 0}),
+    ])
+    p = plan()
     in_window = build_jobs(p, obs(tiles), day=3, targets=assign_targets(p, obs(tiles)), seeds={})
     assert in_window["water"] == [(0, 0)]
 
@@ -298,7 +375,7 @@ def test_two_units_never_claim_the_same_target():
         (0, 3, {"kind": "PASTURE", "animal": "COW", "fed_today": False}),
         (1, 3, {"kind": "PASTURE", "animal": "COW", "fed_today": False}),
     ])
-    p = plan()
+    p = plan(animals=NO_STRUCTURES)
     o = obs(tiles, farmer=(0, 0), hands=[(1, 0), (2, 0)],
             inventories=[{"WHEAT": 1}, {"WHEAT": 1}, {"WHEAT": 1}], shed={})
     targets = assign_targets(p, o)
@@ -307,8 +384,55 @@ def test_two_units_never_claim_the_same_target():
 
 
 def test_units_with_nothing_to_do_pass():
-    p = plan()
+    p = plan(animals=NO_STRUCTURES)
     o = obs(board(), farmer=(0, 0), inventories=[{}], shed={})
     targets = assign_targets(p, o)
     farmer, _ = worker_actions(p, o, 5, targets, build_jobs(p, o, 5, targets, seeds={}))
     assert farmer == ["PASS"]
+
+
+# --- animal realization: the plan reserves tiles, the board builds and places --- #
+
+def test_reserved_structure_tiles_get_a_build_job():
+    # A bought animal only lands in the shed, so the structure must be BUILT before
+    # it can be placed. Without this the consumer spent $1,900 on 5 animals it never
+    # placed; the reserved tiles also stayed empty and unusable for crops.
+    p = plan()
+    o = obs(board())
+    targets = assign_targets(p, o)
+    structure_tile = sorted(targets[0], key=lambda t: (t[1], t[0]))[0]
+    jobs = build_jobs(p, o, day=3, targets=targets, seeds={})
+    assert (structure_tile, "BUILD_PASTURE") in jobs["build"]
+
+
+def test_an_empty_matching_structure_gets_a_place_job():
+    p = plan()
+    o = obs(board())
+    targets = assign_targets(p, o)
+    structure_tile = sorted(targets[0], key=lambda t: (t[1], t[0]))[0]
+    tiles = board(placements=[(*structure_tile, {"kind": "PASTURE"})])
+    jobs = build_jobs(p, obs(tiles), day=3, targets=assign_targets(p, obs(tiles)), seeds={})
+    assert (structure_tile, "COW") in jobs["place"]
+    assert structure_tile not in [t for t, _ in jobs["build"]]
+
+
+def test_a_worker_carrying_an_animal_places_it_on_its_structure():
+    p = plan()
+    o = obs(board())
+    structure_tile = sorted(assign_targets(p, o)[0], key=lambda t: (t[1], t[0]))[0]
+    tiles = board(placements=[(*structure_tile, {"kind": "PASTURE"})])
+    o = obs(tiles, farmer=list(structure_tile), inventories=[{"COW": 1}], shed={})
+    farmer, _ = worker_actions(p, o, 5, assign_targets(p, o), build_jobs(
+        p, o, 5, assign_targets(p, o), seeds={}))
+    assert farmer == ["PLACE", "COW"]
+
+
+def test_a_worker_without_an_animal_is_sent_to_the_shed_to_pick_one_up():
+    p = plan()
+    o = obs(board())
+    structure_tile = sorted(assign_targets(p, o)[0], key=lambda t: (t[1], t[0]))[0]
+    tiles = board(placements=[(*structure_tile, {"kind": "PASTURE"})])
+    o = obs(tiles, farmer=(4, 4), inventories=[{}], shed={"COW": 1})
+    farmer, _ = worker_actions(p, o, 5, assign_targets(p, o), build_jobs(
+        p, o, 5, assign_targets(p, o), seeds={}))
+    assert farmer == ["PICKUP", "COW"]
