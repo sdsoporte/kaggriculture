@@ -34,6 +34,7 @@ Decisions taken by the user before implementation:
 
 ## Evidence log
 
+- **Work unit: `f3cb7dd`** — `docs(ops): record Pi TUI heap-abort incident and host hardening` (adds `docs/OPERATIONS.md` section 5.F and this task record; parent `d1940e5`).
 - 2026-09-23 22:49:40 — SIGABRT, PID 803984, cwd this repo, tty /dev/pts/13.
 - 2026-09-23 23:0x — recon: 370/608 corpus files (12.95 GB), 40 GB free disk, swap 7.0/8.0 GB used, `/tmp` 1.1 GB (tmpfs).
 - 2026-09-23 23:14 — T1: `NODE_OPTIONS` block added to `~/.zshrc:139`, `~/.bashrc:138`, `~/.config/fish/config.fish:130`; `~/.local/bin/pi-safe` (2341 bytes, mode 755).
