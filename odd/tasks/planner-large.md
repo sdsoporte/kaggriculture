@@ -34,12 +34,15 @@ same-turn sell-then-buy coupling.
 
 ## Tasks
 
-- [ ] W1a — `kaggle/bench/build_planner_author.py` generates the author task with
+- [x] W1a — `kaggle/bench/build_planner_author.py` generates the author task with
       the engine source, rule sheet and verdicts embedded. **Delegated** to
-      `gentle-ai-worker` as background task `mufxx0i1-1-mnzm`; allowed surfaces
-      are only the two `kaggle/bench/` files and the worker must not commit.
-- [ ] W1b — Extract both models' plans and diff them against our measured
-      headroom (delegated with W1a; the diff and the verdict are mine).
+      `gentle-ai-worker` (`mufxx0i1-1-mnzm`), which built it, pushed version 1 and
+      ran both models — then **stopped correctly** when revision 2 landed 54s after
+      its push, rather than editing the contract it was told to embed. Continuation
+      `mufyg24s-2-2pv5` re-targets against revision 3.
+- [x] W1b — First pass diffed. Both models obeyed all nine verdicts and cited them;
+      opus still asked for 142 cells on 75, which is how invariant 9 was found. The
+      `/3` plans are pending the re-run.
 - [x] W2a — **Gate: express the tape itself as a `kaggriculture-plan/1` vector.**
       **FAILED, by design, and that was the point.** The schema could not describe
       the tape: four fields had to change (see W2a2), and the vector turned out not
@@ -51,8 +54,14 @@ same-turn sell-then-buy coupling.
       carrot tiles), and `0` as the no-throttle sentinel on
       `market.sell_chunk_cap`. Version bumped to `kaggriculture-plan/2` so a plan
       written against revision 1 is **rejected rather than silently misread**.
-- [ ] W2b — `src/kaggriculture/agents/param_agent.py`: the vector consumer, with
-      the schema's eight invariants each pinned by a unit test.
+- [x] W2b — `src/kaggriculture/agents/param_agent.py`: the **market layer**
+      (land, seeds, animals, hires, sells) with the invariants pinned by pure
+      functions and 67 tests. Workers PASS in this revision, deliberately and
+      visibly.
+- [ ] W2b2 — The worker job board: plant, water, harvest, feed, with the pickup
+      trips that `FEED` requires because it consumes an item the worker carries.
+      This is what makes the consumer able to plant, and therefore what W2c can
+      actually measure.
 - [ ] W2c — **Rewritten after W2a.** The original form ("the tape's own vector,
       consumed, must reproduce the tape's bank") is unachievable by construction:
       the schema deliberately does not describe the tape, because its fields are
@@ -88,4 +97,39 @@ same-turn sell-then-buy coupling.
 
 ## Evidence log
 
-Filled as tasks close.
+### W2b - the market layer, and three things the tests caught
+
+The consumer's invariants are pure functions, so 67 tests run without an episode.
+Three findings, all real: a per-unit `BUY_SEED` loop burned the whole 10-order
+budget on the first crop and starved every crop after WHEAT (the tape emits one
+order per crop with a quantity); the land-cliff floor needed a test in BOTH
+directions, and the negative one reproduces the tomato overlay's failure as an
+assertion ($1,500 before the cliff leaves $400 spendable for a $1,000 purchase);
+and one of my own tests asserted the wrong thing about `paid` - one paid quadrant
+still leaves the next purchase pending.
+
+### W1a/W1b - the first pass, and what it proved
+
+**The hard-constraint embed works.** Both models obeyed all nine measured verdicts
+and cited them by name: no roster expansion, no TOMATO, no MELON fertilizer, both
+set `sell_from_day: 12`. That is the fix for the class of failure that produced the
+economist's -$210 error.
+
+**And both still produced bounds-valid garbage.** `claude-opus-4-5` returned 125
+crop tiles + 17 structures = **142 cells on the 75 that three quadrants unlock**,
+passing every per-field bound. gemini's 58 + 17 = exactly 75/75. Both also resolved
+`animals[].count` past its own `buy_days` list. Both gaps are now contract
+(revision 3).
+
+**The convergence worth keeping**: both models refused the +266 units of TOMATO
+absorption headroom, and opus said why — *"Adding TOMATO would require rewriting
+the water schedule - outside this schema's scope."* The models located the same
+structural wall we measured. That cuts both ways: it validates the measurement, and
+it suggests the schema cannot express a crop whose cadence differs from the one-shot
+crops. Worth resolving before a search reads "TOMATO 0" as the model's preference
+rather than the schema's blind spot.
+
+**A prompt defect I caused**: both models propose `sell_chunk_cap` 4-6, a lever we
+measured as losing (0W-24L at -$5,049 even from day 12), because my verdict line read
+as "do not throttle before day 12" rather than "this lost money". Every verdict line
+must state a measured loss at a stated magnitude, never advice.
