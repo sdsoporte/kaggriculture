@@ -55,12 +55,10 @@ superior.** Quantified so it is falsifiable:
 
 - [x] T1 Harness sanity + control - **PASS** (2026-09-24). See the Calibration
       section below for the measured curve.
-- [ ] T2 Structural assertions: a replay-level checker proving the intended actions
-      actually landed (animals bought/placed, fed, produce collected, zero
-      starvation). Mandatory because `_noop` (`baseline_v9_1.py:448`) silently
-      swallows invalid actions, so a broken overlay can look merely "unlucky".
-      T1 handed this task a free detector: a variant that silently does nothing
-      reproduces the MIRROR signature (mean margin ~0 with mostly exact ties).
+- [x] T2 Structural assertions - **PASS** (2026-09-24).
+      `scripts/assert_overlay.py` + `runner.run_episode_trace()`. Verified on three
+      cases: a no-op FAILS, a roster overlay PASSES, a market-only overlay PASSES
+      with the right note. See the T2 section below.
 - [ ] T3 Build the variants as overlays on the V8/V9.1 tape:
       A = baseline (control) / B = +4 COW / C = +4 SHEEP / D = +4 GOOSE (new coops).
 - [ ] T4 Run the paired benchmark for each variant vs the baseline: 12 seeds
@@ -98,6 +96,40 @@ Findings:
    improvement exists": they demand an edge big enough to justify evicting an
    active slot, not merely one that is statistically visible.
 
+## T2 checker (verified, 2026-09-24)
+
+`scripts/assert_overlay.py` runs two matches and compares LIKE WITH LIKE:
+
+    run A: variant  on seat 0 vs baseline on seat 1
+    run B: baseline on seat 0 vs baseline on seat 1   <- control, same seat
+
+The control MUST sit at the same seat. Comparing seat 0 against seat 1 inside a
+single game conflates the overlay with the engine's seat-ordered asymmetry, which
+T1 measured as real and seed-dependent (up to $696, flipping sign with the seat).
+With the same opponent on seat 1 - a tape, which never reads the opponent - the
+seat-1 side behaves identically in both runs, the seat bias cancels, and any
+difference in the seat-0 trace is attributable to the overlay.
+
+It FAILS when both the season roster and the full per-turn market-order stream
+match the control, and it asserts `--expect TYPE=N` peaks plus zero escapes
+(escape = the authoritative starvation rule, `kaggriculture.py:805-832`).
+
+Verification - each case exits as required:
+
+| case | exit | roster divergence | order divergence | verdict |
+| --- | --- | --- | --- | --- |
+| `main_v8` vs `main_v8` (no-op) | 1 | NONE | NONE | FAIL: overlay never landed |
+| `main_v8` vs `main_v4` (real roster change) | 0 | day 1 | turn 1 | PASS |
+| `main_v9_1` vs `main_v8`, seed 0 | 0 | NONE | **turn 2** | PASS, market-only note |
+
+Blind spot found and closed during T2: a roster signature alone cannot see a
+**market-only** overlay. `main_v9_1`'s JIT melon overlay changes the order stream
+at turn 2 while the farm stays identical, and its textile pivot never fired at
+seed 0 because the pivot is conditioned on a `YARN_STORE` unlock that did not
+roll. The checker therefore also compares the full per-turn order stream and
+prints "roster unchanged - market/order-side only" instead of passing a roster
+expectation it cannot meet.
+
 ## Constraints / non-goals
 
 - **The tape cannot be regenerated.** Verified: `_BLOB` is base64+zlib JSON, there
@@ -130,3 +162,9 @@ Findings:
   16W-6L-2T / +$922.7, reproducing the historical +$923. main_v8 vs main_v4
   16W-0L-0T / +$132,193.6. ~4.3 s/game. Raw logs: `/tmp/t1_mirror.log`,
   `/tmp/t1_v91.log`, `/tmp/t1_v4.log`.
+- 2026-09-24 - **T2 PASS**. `scripts/assert_overlay.py` (new) +
+  `runner.run_episode_trace()` (additive; `run_episode` unchanged, mirror benchmark
+  reproduces the T1 banks exactly for seeds 0-2, including the -644/+644 seat
+  asymmetry). No-op detector FAILS on the mirror, PASSES on a roster change, and
+  PASSES with a market-only note on `main_v9_1` (order divergence at turn 2).
+  pytest 3 passed. Logs: `/tmp/t2_mirror.log`, `/tmp/t2_v4.log`, `/tmp/t2_v91.log`.
