@@ -59,8 +59,9 @@ superior.** Quantified so it is falsifiable:
       `scripts/assert_overlay.py` + `runner.run_episode_trace()`. Verified on three
       cases: a no-op FAILS, a roster overlay PASSES, a market-only overlay PASSES
       with the right note. See the T2 section below.
-- [ ] T3 Build the variants as overlays on the V8/V9.1 tape:
-      A = baseline (control) / B = +4 COW / C = +4 SHEEP / D = +4 GOOSE (new coops).
+- [x] T3 Build the variants - **DONE, but the design changed** (2026-09-24).
+      The tape cannot host MORE animals; it can host a different MIX at the same
+      slots. The swap also has to start at step 150. See "T3 variants" below.
 - [ ] T4 Run the paired benchmark for each variant vs the baseline: 12 seeds
       (24 games) per variant, ~105 s each at the measured 4.3 s/game.
 - [ ] T5 Analysis + decision gate against the acceptance criteria; write the verdict
@@ -130,6 +131,56 @@ roll. The checker therefore also compares the full per-turn order stream and
 prints "roster unchanged - market/order-side only" instead of passing a roster
 expectation it cannot meet.
 
+## T3 variants (built and gated, 2026-09-24)
+
+Design change forced by measurement. The plan was A baseline / B +4 COW / C +4
+SHEEP / D +4 GOOSE. Profiling the tape (`scratch/tape_profile.py`) settled it the
+other way:
+
+- the season ends with **0 free structure slots** (COOP 3/3, PASTURE 14/14);
+- only **7.4% of worker turns are idle** (529 of 7150);
+- **shed wheat stays at 0-47**, so the feed budget has no slack;
+- structures are built by WORKER actions, not market orders (0 BUILD_* orders).
+
+Adding animals needs new structures, extra placements and ~15 feed actions each -
+a rescheduling problem, not a string swap. A cheap version would also be an
+UNFAIR test: an animal added late, when cash is plentiful but ~10 days remain,
+measures timing rather than animal value.
+
+So the variants change the MIX at the same slots, turns and hand positions:
+`v10_mix.py` (transform) plus `v10_cow.py`, `v10_sheep.py`, `v10_goose.py`.
+
+Second finding: **the swap must start at step 150.** A full-roster overhaul from
+step 0 STALLS - the early game leaves $24 on day 0 and HIRE success depends on
+money, so a cost change shifts the hire pattern and desynchronises the whole hand
+choreography. Measured on the cow variant from step 0: peak COW 7 instead of 14,
+only 7 of 14 pastures built, 2 of 3 geese lost. From step 150 cash is plentiful
+($610 and rising) and the swap lands cleanly - the same threshold the V9.1 textile
+pivot uses.
+
+Gate results (`scripts/assert_overlay.py`, seed 0; peak counts derived from the
+tape's buy schedule, and the divergence turns confirm it - cow diverges at turn
+196, its first post-150 SHEEP buy; sheep and goose at turn 151, the first post-150
+COW buy):
+
+| variant | peak roster | peak structures | first divergence | escapes |
+| --- | --- | --- | --- | --- |
+| control (main_v8) | COW 9 / SHEEP 5 / GOOSE 3 | 4 COOP / 14 PASTURE | - | 0 |
+| `v10_cow` | **COW 12** / SHEEP 2 / GOOSE 3 | 4 / 14 | day 9 (turn 196) | 0 |
+| `v10_sheep` | COW 4 / **SHEEP 9** / GOOSE 3 | 4 / 14 | day 7 (turn 151) | 0 |
+| `v10_goose` | COW 4 / SHEEP 2 / **GOOSE 11** | **12 COOP / 6 PASTURE** | day 7 (turn 151) | 0 |
+
+**The tool itself is verified**: a NULL swap (COW -> COW through the same
+machinery) reproduces the control bit-for-bit - identical roster AND identical
+full order stream - so the checker reports "overlay never landed". That is what
+makes the three PASSes above meaningful.
+
+`tests/test_v10_mix.py` (10 unit tests) pins the transform, including the bug the
+first version shipped: the BUILD swap emitted the structure NAME instead of the
+build VERB (`["COOP"]` instead of `["BUILD_COOP"]`), which the engine ignores
+silently - that is how the first goose variant produced zero structures and zero
+animals with no error anywhere.
+
 ## Constraints / non-goals
 
 - **The tape cannot be regenerated.** Verified: `_BLOB` is base64+zlib JSON, there
@@ -168,3 +219,9 @@ expectation it cannot meet.
   asymmetry). No-op detector FAILS on the mirror, PASSES on a roster change, and
   PASSES with a market-only note on `main_v9_1` (order divergence at turn 2).
   pytest 3 passed. Logs: `/tmp/t2_mirror.log`, `/tmp/t2_v4.log`, `/tmp/t2_v91.log`.
+- 2026-09-24 - **T3 DONE** (design changed, see the T3 section). `v10_mix.py` +
+  `v10_cow.py` / `v10_sheep.py` / `v10_goose.py` + `tests/test_v10_mix.py`. All
+  three variants PASS the landing gate at seed 0 with zero escapes; derived peaks
+  match (COW 12 / SHEEP 9 / GOOSE 11). Null swap proves the wrapper is faithful.
+  pytest 13 passed. First goose attempt (structure name instead of BUILD_ verb)
+  produced 0 structures / 0 animals - caught by the gate, then pinned by a test.
