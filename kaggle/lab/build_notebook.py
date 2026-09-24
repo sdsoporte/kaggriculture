@@ -1,17 +1,22 @@
 #!/usr/bin/env python
-"""Generate the Kaggle notebook for corpus/market analysis.
+"""Generate the Kaggle notebook for corpus ingestion and market analysis.
 
 Why a generator: the .ipynb must be valid nbformat JSON, and hand-editing that
 JSON is how you get a broken kernel. Here the cells live as readable Python
 strings and the notebook is emitted with json.dump, so it is always well-formed
 and reviewable in a diff.
 
-Two hard-won rules are baked in:
-  * never assume the input layout - the first version globbed
-    /kaggle/input/<slug>/ and found nothing, because Kaggle groups attached
-    datasets under /kaggle/input/datasets/. Every lookup is recursive.
-  * no triple quotes inside the cell sources, or they would terminate the
-    builder's own strings.
+Three hard-won rules are baked in:
+  * never assume the input layout - Kaggle mounts other people's datasets under
+    /kaggle/input/datasets/<owner>/<slug>/ and one's own flat. Every lookup is
+    recursive.
+  * ingest in TIERS. Parsing 1.19 TB of replays is the wrong first move: the
+    manifests answer population questions in kilobytes, and a prefix read of
+    ~8 kB per replay answers team/seed questions for ~300 MB. Full parsing is
+    only for the episodes actually selected.
+  * price marginal units on the published curve, never at a flat or realised
+    average. That confusion produced two wrong conclusions in this project.
+No triple quotes inside the cell sources, or they would end the builder strings.
 
 Usage:
     python kaggle/lab/build_notebook.py            # writes kaggriculture-lab.ipynb
@@ -33,73 +38,81 @@ def code(text):
             "outputs": [], "source": text.splitlines(keepends=True)}
 
 
-INTRO = """# Kaggriculture Lab
+INTRO = """# Kaggriculture Lab - corpus ingestion at scale
 
-Analysis workbench for the Kaggriculture competition, running where the data lives.
+Analysis workbench for the Kaggriculture competition, running where the corpus lives.
 
-**Why here instead of locally:** the episode corpus is published as daily datasets
-(one per day, ~21.5 GB each). The index manifest lists the whole league as
-**56 days / 38,544 episodes / 1.19 TB**, against the single day (608 episodes,
-1.6%) that fits on a local disk. Attached as notebook inputs they are mounted and
-read, so there is no download and no local disk pressure, and a session gets 12 h.
+**The scale argument.** The league is published as one dataset per day, ~21.5 GB
+each; the index manifest lists **56 days, 38,544 episodes, 1.19 TB**. A laptop
+holds one day. Here the datasets are mounted next to the compute, so a session can
+span many days with no download and no local disk pressure.
 
-**Honest note about the GPU:** these analyses are JSON/pandas I/O-bound and the GPU
-does not accelerate them (Kaggle's own docs say pandas and scikit-learn do not
-benefit). It is enabled because it costs nothing here. Its legitimate use in this
-project is a different, separate job: fitting a market surrogate from the
-trajectories.
+**How to ingest that much without drowning.** Full-parsing 1.19 TB of replays is
+the wrong first move. This notebook works in tiers:
 
-**Which conclusions are safe from this corpus:** it is published as "top episode
-replays" and its own manifest shows `avg_score` clustered around 3000, while our
-own submissions sit near 1200. So the corpus is a different rating band, not a
-neutral sample: it is valid for WITHIN-GAME comparisons (both seats of the same
-match) and for engine/market mechanics, but NOT for comparing our play against
-theirs. That trap already produced one wrong conclusion in this project, so the
-controls below are built in."""
+| tier | what it reads | cost | answers |
+| --- | --- | --- | --- |
+| 0 | every `manifest.csv` | kilobytes | counts, score bands, sizes per day |
+| 1 | the first ~8 kB of every replay | ~300 MB total | team names, seeds, per-team history |
+| 2 | full replay JSON | ~35 MB per episode | behaviour: roster, market, revenue, timing |
 
-DISCOVERY = """import collections
+**On the GPU, honestly:** parsing JSON is CPU- and I/O-bound, and Kaggle's own
+docs say pandas/sklearn do not benefit from a GPU. Worse, GPU sessions have
+historically come with *fewer* cores and *less* RAM than CPU ones, which is the
+opposite of what a bulk-ingest job wants. Cell 1 prints the resources the session
+actually has, so the choice is made from evidence instead of a habit. The GPU earns
+its keep only for a genuinely numeric job (a market surrogate trained on the
+trajectories), which is a separate project.
+
+**Which conclusions are safe.** The corpus is published as "top episode replays"
+and its own manifest shows the scores clustered around 3000, while our submissions
+sit near 1200: it is a different rating band, so it supports WITHIN-GAME
+comparisons (both seats of one match) and engine/market mechanics, but not
+comparisons of our play against theirs."""
+
+RESOURCES = """import collections
 import csv
 import glob
+import json
 import os
-import statistics
+import re
 import sys
+import time
 
 print("python", sys.version.split()[0])
+print(f"cpu_count          : {os.cpu_count()}")
+try:
+    with open("/proc/meminfo") as handle:
+        for line in handle:
+            if line.startswith(("MemTotal", "MemAvailable")):
+                print(f"{line.split(':')[0]:<19}: {int(line.split()[1]) / 1e6:.1f} GB")
+except OSError:
+    pass
+for cmd in ("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader",):
+    try:
+        import subprocess
+        print("gpu                :", subprocess.run(cmd.split(), capture_output=True,
+              text=True, timeout=20).stdout.strip() or "none")
+    except Exception as exc:
+        print("gpu                : unavailable", type(exc).__name__)
+
+# Discover the layout instead of assuming it: the first version of this notebook
+# globbed /kaggle/input/<slug>/ and silently found nothing.
+def find_all(name):
+    return sorted(glob.glob(f"/kaggle/input/**/{name}", recursive=True))
 
 
-def show_tree(root="/kaggle/input", max_depth=3):
-    # Discover the layout instead of assuming it: Kaggle has changed where
-    # attached datasets are mounted, and the first version of this notebook
-    # found nothing because of exactly that.
-    for dirpath, dirnames, filenames in os.walk(root):
-        rel = os.path.relpath(dirpath, root)
-        level = 0 if rel == "." else rel.count(os.sep) + 1
-        if level > max_depth:
-            dirnames[:] = []
-            continue
-        print("  " * level + os.path.basename(dirpath) + "/")
-        for name in sorted(filenames)[:5]:
-            size = os.path.getsize(os.path.join(dirpath, name))
-            print("  " * (level + 1) + f"{name}  ({size / 1e6:.1f} MB)")
-        if len(filenames) > 5:
-            print("  " * (level + 1) + f"... {len(filenames) - 5} more files")
+manifests = find_all("manifest.csv")
+episode_files = find_all("*.json")
+print(f"\\nmanifests found   : {len(manifests)}")
+print(f"episode files     : {len(episode_files):,}")
+for path in manifests[:6]:
+    print(f"  {path}  ({os.path.getsize(path) / 1e3:.0f} kB)")"""
 
+TIER0 = """episodes = []      # per-episode rows, from every daily dataset's manifest
+index_rows = []    # the index dataset's list of daily datasets
 
-def find(name, limit=1):
-    hits = sorted(glob.glob(f"/kaggle/input/**/{name}", recursive=True))
-    return hits if limit > 1 else (hits[0] if hits else None)
-
-
-show_tree()
-print()
-print("manifest.csv files under /kaggle/input:")
-for path in sorted(glob.glob("/kaggle/input/**/manifest.csv", recursive=True)):
-    print("  ", path, f"({os.path.getsize(path) / 1e3:.0f} kB)")"""
-
-INDEX = """episodes = []      # per-episode rows from the daily datasets
-datasets = []      # the index dataset's list of daily datasets
-
-for manifest in sorted(glob.glob("/kaggle/input/**/manifest.csv", recursive=True)):
+for manifest in manifests:
     source = os.path.basename(os.path.dirname(manifest))
     try:
         with open(manifest) as handle:
@@ -108,40 +121,105 @@ for manifest in sorted(glob.glob("/kaggle/input/**/manifest.csv", recursive=True
                     row["_source"] = source
                     episodes.append(row)
                 elif "daily_dataset_slug" in row:
-                    datasets.append(row)
+                    index_rows.append(row)
     except OSError as exc:
         print("skip", manifest, exc)
 
-print(f"episodes with metadata available : {len(episodes)}")
-print(f"daily datasets listed in the index: {len(datasets)}")
-print(f"daily datasets actually attached  : {len({e['_source'] for e in episodes})}")
+print(f"episodes with metadata : {len(episodes):,} across "
+      f"{len({e['_source'] for e in episodes})} attached days")
+if index_rows:
+    print(f"league per the index   : {sum(int(r['episode_count']) for r in index_rows):,} "
+          f"episodes, {sum(int(r['total_bytes']) for r in index_rows) / 1e12:.2f} TB, "
+          f"{len(index_rows)} days")
+    print(f"newest day listed      : {max(r['date'] for r in index_rows)}")
 
-if datasets:
-    total = sum(int(d["episode_count"]) for d in datasets)
-    size = sum(int(d["total_bytes"]) for d in datasets)
-    print(f"full league per the index         : {total:,} episodes, {size / 1e12:.2f} TB")
-    print(f"newest listed day                 : {max(d['date'] for d in datasets)}")"""
+by_day = collections.defaultdict(list)
+for row in episodes:
+    if row.get("avg_score"):
+        by_day[row["_source"]].append(float(row["avg_score"]))
+if by_day:
+    print(f"\\n{'day dataset':<42}{'n':>6}{'min':>7}{'median':>8}{'max':>7}")
+    for day in sorted(by_day)[:12]:
+        scores = sorted(by_day[day])
+        print(f"{day:<42}{len(scores):>6}{scores[0]:>7.0f}"
+              f"{scores[len(scores) // 2]:>8.0f}{scores[-1]:>7.0f}")"""
 
-BANDS = """OUR_RATINGS = {"56513137": 1238.2, "56501811": 1194.0}
+TIER1 = """import multiprocessing as mp
 
-if episodes:
-    scores = sorted(float(e["avg_score"]) for e in episodes if e.get("avg_score"))
-    def q(p):
-        return scores[int(p * (len(scores) - 1))]
-    print("avg_score of the episodes we hold:")
-    print(f"  n={len(scores)}  min {scores[0]:.0f}  p25 {q(.25):.0f}  median {q(.5):.0f}"
-          f"  p75 {q(.75):.0f}  max {scores[-1]:.0f}")
-    print(f"\\nour active submissions: {OUR_RATINGS}")
-    lowest = min(OUR_RATINGS.values())
-    print(f"corpus episodes at or below our lowest rating: "
-          f"{sum(1 for s in scores if s < lowest)} / {len(scores)}")
-    print("=> the corpus is a different rating band, so it cannot compare our play"
-          " against theirs; only within-game comparisons are safe.")
-else:
-    print("no episode metadata found - check the attached datasets")"""
+MAX_EPISODES = 6000   # keep a session comfortable; raise it once the cost is known
+
+def scan_one(path):
+    # Tier 1: read only the head and tail of a replay. info.TeamNames and seed sit
+    # at one end or the other, so ~12 kB per file answers team questions for the
+    # whole league instead of parsing 35 MB.
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(4096)
+            handle.seek(max(0, handle.seek(0, 2) - 8192))
+            tail = handle.read(8192)
+        blob = (head + b" " + tail).decode("utf-8", "replace")
+        match = re.search(r'"TeamNames"\\s*:\\s*\\[(.*?)\\]', blob, re.S)
+        if not match:
+            return None
+        names = json.loads("[" + match.group(1) + "]")   # decodes \\uXXXX escapes
+        seed = re.search(r'"seed"\\s*:\\s*(-?\\d+)', blob)
+        return (os.path.basename(path), names, int(seed.group(1)) if seed else None)
+    except (OSError, ValueError):
+        return None
+
+sample = episode_files[:MAX_EPISODES]
+started = time.time()
+scanned = []
+if sample:
+    with mp.Pool(min(8, os.cpu_count() or 1)) as pool:
+        for result in pool.imap_unordered(scan_one, sample, chunksize=32):
+            if result:
+                scanned.append(result)
+    elapsed = time.time() - started
+    rate = len(sample) / max(elapsed, 1e-9)
+    print(f"scanned {len(sample):,} replays in {elapsed:.1f}s ({rate:,.0f}/s), "
+          f"{len(scanned):,} parsed")
+    print(f"projected for the whole league ({38454:,}): "
+          f"{38454 / max(rate, 1e-9) / 60:.1f} minutes")
+    print(f"bytes read: ~{len(sample) * 12 / 1e6:.0f} MB "
+          f"(versus ~{len(sample) * 35 / 1e6:.0f} MB if fully parsed)")"""
+
+TIER1_INDEX = """bands = {}
+episode_day = {}
+for row in episodes:
+    episode_day[row["episode_id"]] = row["_source"]
+    if row.get("avg_score"):
+        bands[row["episode_id"]] = float(row["avg_score"])
+
+team_days = collections.Counter()
+team_games = collections.Counter()
+team_scores = collections.defaultdict(list)
+for name, names, seed in scanned:
+    episode_id = name.split(".")[0]
+    score = bands.get(episode_id)
+    day = episode_day.get(episode_id, "?")   # dict lookup, not a linear scan per file
+    for team in names:
+        team_games[team] += 1
+        team_days[(team, day)] += 1
+        if score:
+            team_scores[team].append(score)
+
+team_day_count = collections.Counter(team for team, _ in team_days)
+
+print(f"distinct teams seen: {len(team_games):,}")
+print(f"\\n{'team':<30}{'games':>7}{'days':>6}{'mean band':>12}")
+for team, count in team_games.most_common(15):
+    scores = team_scores.get(team, [])
+    print(f"{team[:30]:<30}{count:>7}{team_day_count[team]:>6}"
+          f"{(sum(scores) / len(scores) if scores else 0):>12.0f}")
+
+submissions = {"56513137": 1238.2, "56501811": 1194.0}
+print(f"\\nour active submissions: {submissions}")
+print("=> the corpus band is ~3000: comparing our games against it compares "
+      "populations, not strategies. Only within-game comparisons are safe.")"""
 
 CURVE = """curve = {}
-curve_path = find("price_curve.csv")
+curve_path = (find_all("price_curve.csv") or [None])[0]
 if curve_path:
     with open(curve_path) as handle:
         for row in csv.DictReader(handle):
@@ -152,10 +230,6 @@ if curve_path:
     for product in order:
         row = curve.get(product, {})
         print(f"{product:<12}" + "".join(f"{row.get(lv, 0):>9}" for lv in levels))
-
-    # The decision the curve actually drives: the value of a MARGINAL unit, which
-    # is nothing like the realised average (that confusion already produced one
-    # wrong conclusion in this project).
     print("\\nmarginal loss from +100 units of supply at I0:")
     for product in order:
         row = curve.get(product, {})
@@ -164,31 +238,47 @@ if curve_path:
             print(f"  {product:<12} {base:>5} -> {row.get(10100, 0):>5}"
                   f"  ({100 * (row.get(10100, 0) - base) / base:+.0f}%)")
 else:
-    print("price_curve.csv not attached - add the engine-tables dataset as an input")"""
+    print("price_curve.csv not attached")"""
 
-GROWTH = """growth_path = find("crop_growth_trace.csv")
+GROWTH = """growth_path = (find_all("crop_growth_trace.csv") or [None])[0]
 if growth_path:
     by_crop = collections.defaultdict(lambda: collections.defaultdict(list))
     with open(growth_path) as handle:
         for row in csv.DictReader(handle):
             by_crop[row["crop"]][row["policy"]].append(float(row["yield_units"] or 0))
-    print(f"{'crop':<12} {'no fertilizer':>14} {'fertilized':>11} {'delta':>7}"
-          f"  worth at the curve price")
+
+    def price_at(product, inventory):
+        row = curve.get(product, {})
+        return row.get(inventory, row.get(10000, 0))
+
+    print(f"{'crop':<12}{'no fert':>9}{'fert':>7}{'delta':>7}"
+          f"{'marginal +delta (I0->I0+delta)':>34}")
     for crop in sorted(by_crop):
         plain = by_crop[crop].get("watered_no_fertilizer")
         fert = by_crop[crop].get("watered_fertilized")
         if not plain or not fert:
             continue
-        delta = sum(fert) - sum(plain)
-        price = curve.get(crop, {}).get(10000, 0) if curve else 0
-        print(f"{crop:<12} {sum(plain):>14.0f} {sum(fert):>11.0f} {delta:>+7.0f}"
-              f"  ${delta * price:>8,.0f} vs the ~$42 forgone by selling that unit")
+        delta = int(sum(fert) - sum(plain))
+        # THE POINT OF THIS CELL: value the extra units at the curve price AFTER
+        # the extra supply lands, not at the pre-supply or base price. Valuing a
+        # marginal unit at a flat price is the mistake that produced two wrong
+        # conclusions in this project (the first version of this very cell made it).
+        if delta > 0:
+            entry = price_at(crop, 10000)
+            exit_ = price_at(crop, 10000 + delta)
+            value = sum(price_at(crop, 10000 + step) for step in range(1, delta + 1))
+            print(f"{crop:<12}{sum(plain):>9.0f}{sum(fert):>7.0f}{delta:>+7d}"
+                  f"   ${entry:>5} -> ${exit_:<5}  revenue ${value:>7,.0f}"
+                  f"  vs ~$42 forgone")
+        else:
+            print(f"{crop:<12}{sum(plain):>9.0f}{sum(fert):>7.0f}{delta:>+7d}"
+                  f"   no gain")
 else:
     print("crop_growth_trace.csv not attached")"""
 
 REFERENCE = """for name in ("crop_economics.csv", "head_to_head_games.csv",
              "baseline_league.csv", "agents_manifest.csv"):
-    path = find(name)
+    path = (find_all(name) or [None])[0]
     if not path:
         print(f"{name:<26} not attached")
         continue
@@ -196,52 +286,66 @@ REFERENCE = """for name in ("crop_economics.csv", "head_to_head_games.csv",
         rows = list(csv.DictReader(handle))
     print(f"{name:<26} {len(rows):>5} rows  columns: {list(rows[0].keys())[:8]}")
 
-h2h = find("head_to_head_games.csv")
-if h2h:
-    with open(h2h) as handle:
-        games = list(csv.DictReader(handle))
-    print(f"\\nmeasured reference games: {len(games)}")
-    for row in games[:5]:
-        print("  ", dict(list(row.items())[:6]))"""
+league_path = (find_all("baseline_league.csv") or [None])[0]
+if league_path:
+    with open(league_path) as handle:
+        league = list(csv.DictReader(handle))
+    ranked = collections.Counter()
+    played = collections.Counter()
+    for row in league:
+        try:
+            games = int(row["games"] or 0)
+            wins_a = int(row["wins_a"] or 0)
+        except ValueError:
+            continue
+        ranked[row["agent_a"]] += wins_a
+        played[row["agent_a"]] += games
+    print("\\nreference league win rate (measured, this is the opponent ladder):")
+    for agent, wins in ranked.most_common():
+        total = max(played[agent], 1)
+        print(f"  {agent:<20} {wins:>5}W / {total:>5}  = {100 * wins / total:>5.1f}%")"""
 
-NEXT = """## 4. Next steps this notebook should grow into
+NEXT = """## Next steps
 
-1. Port `income_breakdown.py` / `sale_context.py` / `sell_timing.py` here and run
-   them over a far larger sample than one local day, always with the within-game
-   control (both seats of the same match) beside every cross-team number.
-2. Upload our own replay caches as a private dataset so our games live here too.
-3. Sweep tape overlays over many seeds: local matches cost ~4.3 s each, so a free
-   12 h session covers far more seeds than a laptop.
-4. Only after a variant passes the landing gate (`scripts/assert_overlay.py`) -
-   that gate exists because a silently ineffective overlay looks exactly like an
-   unlucky one."""
+1. Raise `MAX_EPISODES` once the tier-1 cost is known (the cell prints the rate and
+   projects the whole league), and attach more daily datasets to widen the window.
+2. Port `income_breakdown.py` / `sale_context.py` / `sell_timing.py` for tier 2, so
+   behaviour analyses run over a large sample - always with the within-game control
+   (both seats of the same match) beside every cross-team number.
+3. Upload our own replay caches as a private dataset so our games live here too.
+4. The GPU's only honest use here is a market surrogate trained on trajectories;
+   everything above is CPU work."""
 
 
 CELLS = [
     md(INTRO),
-    code(DISCOVERY),
-    md("""## 1. The league index (metadata only, so it is cheap)
+    code(RESOURCES),
+    md("""## Tier 0 - the manifests (kilobytes, whole league)
 
-Every daily dataset ships a `manifest.csv` with per-episode metadata
+Each daily dataset ships `manifest.csv` with per-episode metadata
 (`episode_id, create_time, avg_score, min_score, sum_score, agent_count,
-size_bytes`), and the index dataset lists the daily datasets. Reading manifests
-costs kilobytes and answers population questions before touching a 35 MB replay."""),
-    code(INDEX),
-    code(BANDS),
-    md("""## 2. Engine tables: where marginal value actually lives
+size_bytes`), and the index dataset lists the daily datasets. This answers the
+population questions before touching a replay."""),
+    code(TIER0),
+    md("""## Tier 1 - a prefix scan of every replay (~300 MB, not 1.19 TB)
 
-The market price is a deterministic function of inventory, and the published curve
-is extremely steep for shop-drained products while nearly flat for wheat and egg.
-That decides which extra unit is worth producing: **price marginal units on the
-curve, never at the realised average**."""),
+`info.TeamNames` and `seed` sit at one end or the other of the JSON, so reading
+~12 kB per file yields a league-wide team index. This is the part that scales to
+many days: cost grows with file count, not with 35 MB per episode."""),
+    code(TIER1),
+    code(TIER1_INDEX),
+    md("""## The published market curve - where marginal value lives
+
+Price is a deterministic function of inventory, and the curve is brutally steep
+for shop-drained products while nearly flat for wheat and egg."""),
     code(CURVE),
-    code(GROWTH),
-    md("""## 3. Reference agents and their measured league
+    md("""## Fertilizer value, priced at the MARGINAL point
 
-`kaggriculture-reference-agents` carries ten complete agents plus measured
-outcomes, a per-day league timeline and crop economics. That is the honest basis
-for asking whether a variant is broadly superior: a diverse opponent set rather
-than one opponent."""),
+The published growth traces give accumulated yield per policy. The extra units must
+be valued step by step along the curve, because the last unit of a batch is worth
+far less than the first."""),
+    code(GROWTH),
+    md("""## The measured reference league (a diverse opponent ladder)"""),
     code(REFERENCE),
     md(NEXT),
 ]
