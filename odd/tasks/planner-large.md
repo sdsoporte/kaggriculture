@@ -41,8 +41,11 @@ same-turn sell-then-buy coupling.
       its push, rather than editing the contract it was told to embed. Continuation
       `mufyg24s-2-2pv5` re-targets against revision 3.
 - [x] W1b — First pass diffed. Both models obeyed all nine verdicts and cited them;
-      opus still asked for 142 cells on 75, which is how invariant 9 was found. The
-      `/3` plans are pending the re-run.
+      opus still asked for 142 cells on 75, which is how invariant 9 was found.
+- [x] W1c — Re-targeted to revision 3 and re-run (`mufyg24s-2-2pv5`). Both plans now
+      fit 75/75 exactly, both fixed the count rule, and both set
+      `sell_chunk_cap: 0` after the verdicts stopped naming a cause. One new defect
+      of the same class remains: see the evidence.
 - [x] W2a — **Gate: express the tape itself as a `kaggriculture-plan/1` vector.**
       **FAILED, by design, and that was the point.** The schema could not describe
       the tape: four fields had to change (see W2a2), and the vector turned out not
@@ -58,10 +61,10 @@ same-turn sell-then-buy coupling.
       (land, seeds, animals, hires, sells) with the invariants pinned by pure
       functions and 67 tests. Workers PASS in this revision, deliberately and
       visibly.
-- [ ] W2b2 — The worker job board: plant, water, harvest, feed, with the pickup
-      trips that `FEED` requires because it consumes an item the worker carries.
-      This is what makes the consumer able to plant, and therefore what W2c can
-      actually measure.
+- [ ] W2b2 — The worker job board. **Partial and NOT closed.** It plants (23 tiles
+      from 0), hires, and runs a season, but money reaches $0 by day 9-14 and the
+      farm empties. Three real bugs were found by running a season and are fixed;
+      the remaining drain is not yet isolated.
 - [ ] W2c — **Rewritten after W2a.** The original form ("the tape's own vector,
       consumed, must reproduce the tape's bank") is unachievable by construction:
       the schema deliberately does not describe the tape, because its fields are
@@ -133,3 +136,50 @@ rather than the schema's blind spot.
 measured as losing (0W-24L at -$5,049 even from day 12), because my verdict line read
 as "do not throttle before day 12" rather than "this lost money". Every verdict line
 must state a measured loss at a stated magnitude, never advice.
+
+### W1c - the re-run, and the fix that worked
+
+Every verdict line was rewritten as a measured result at a stated magnitude. **It
+worked**: at version 1 both models proposed `sell_chunk_cap` 4-6; at version 2 both
+set `0` and cited the 0W-24L records. The lesson is general - a verdict that names a
+CAUSE ("chunking defunded the buy queue before day 12") invites the reader to avoid
+the cause and keep the lever, which is exactly what happened.
+
+Both plans also now fit invariant 9 **exactly**: 75 of 75 cells, against 142 for opus
+at version 1. Both fixed `animals[].count == len(buy_days)`. Both showed the tile
+arithmetic in their own rationales, unprompted by any field bound - the explicit ask
+block is what did it.
+
+**The surviving defect is the same class, one level up.** opus read V1/V3 as
+species-level verdicts: it set COW to 0 ("V1 measured -$9,072... systematic loss") and
+bought 7 GOOSE, arguing "geese are $300 vs sheep's $500". It inferred species merit
+from a measurement of a **payload swap at fixed slots** - the measurement does not
+price a roster composed differently from the start. A search must not consume that
+plan as-is, and the next prompt revision needs a scope line that survives
+hard-constraint framing. Both models also converged on identical labour curves
+(`start 4, ramp_step 1, daily_target 12`) and 75/75 with zero slack, so neither is
+exploring those two dimensions at all.
+
+### W2b2 - the job board, and the three bugs a season found
+
+The consumer now farms: deterministic tile targeting, a job board for
+feed/water/harvest/plant/collect/dig, nearest-job assignment with one unit per
+target, and the feeding carry chain. Three bugs, none of which a static reading
+would have caught:
+
+1. `_VERB` had no `"plant"` key, so the agent raised on the first PLANT day and the
+   engine isolated the failure - the agent was inert for the whole season while the
+   opponent kept playing. A totality test now pins it.
+2. The PLANT action was emitted as a bare `["PLANT"]`; the engine reads `action[1]`
+   as the crop and returns early (`:418-420`), so it planted nothing while looking
+   valid in every trace. **Third occurrence of this bug class here** (`["COOP"]`,
+   `["TOMATO"]`, now `["PLANT"]`), so jobs carry full actions and a regression test
+   pins the payload.
+3. The cash floor applied to every order deadlocked the agent whenever cash fell
+   below it (day 4: $1,201 against $2,100): no hires, no seed, no way back. Hires
+   are exempt now - the floor protects the land purchase only while it is reachable.
+
+**Still open**: money reaches $0 by day 9-14 and the farm empties, even after gating
+seed purchases to imminent plantings and half the cash (that raised planted tiles
+from 0 to 23). The next step is to isolate the remaining drain. Nothing downstream
+should consume this consumer until it survives a season.
