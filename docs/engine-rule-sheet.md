@@ -56,7 +56,8 @@ verified rows are here.
 | TOMATO seed 50, first yield day **8**, interval **1**, cap 4, ongoing | `:14` |
 | STRAWBERRY seed 100, first yield day **10**, interval **2**, cap 4, ongoing | `:15` |
 | MELON seed 80, first yield day **10**, max yield day **12**, interval 0, cap 6, one-shot | `:16` |
-| Watering grants the growth bonus only inside `[(max_yield_day + 1) // 2, max_yield_day]`; outside that window watering only prevents weeds. **For MELON that window is days 6-12 while its harvest window is days 10-12** — the two were conflated once in this project because both were called "the melon window". | `:440-441` |
+| Watering grants the growth bonus only inside `[(max_yield_day + 1) // 2, max_yield_day]`; outside that window watering only prevents weeds. **For MELON that window is days 6-12 while its harvest window is days 10-12** - the two were conflated once in this project because both were called "the melon window". | `:440-441` |
+| **A crop MUST be watered on its PLANTING day or it dies at the next midnight.** `_new_plant` starts `consecutive_unwatered` at **1** ("planting day counts as unwatered") and the daily refresh turns a tile into a WEED at `consecutive_unwatered >= 2`. So the rule above is about the growth BONUS, not about whether to water at all: reading it as "never water outside the window" kills every crop on its first night. Measured cost of that misreading on our own plan consumer: day 0 planted 15 and watered 0, day 1 dug 15, zero SELL orders all season, bank $0 by day 9. | `:222`, `:779-783` |
 | `HARVEST` before `first_yield_day` is a no-op (and warns for ongoing crops, which "should never happen"). | `:451-462` |
 | A one-shot plant's `max_lifespan_step` is `(day + max_yield_day + 1) * turns_per_day`; ongoing crops are `-1` (no decay). | `:224` |
 | Shed capacity defaults to **100** items, shared across products and animals; overflow is discarded. | `:553`, `:866`, `:908` |
