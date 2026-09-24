@@ -19,84 +19,65 @@ key of our own):
 import kaggle_benchmarks as kbench  # type: ignore[import-not-found]  # provided by Kaggle's task runtime, deliberately not installed in the project venv
 
 # %%
-FINDINGS = """You are reviewing an analysis of a Kaggle farming simulation
-("Kaggriculture": 30 days, 720 turns, two players, market price is a
-deterministic function of market inventory). Our agent is a FIXED 720-step
-action tape. Mean bank on the ladder ~$91k, 55.6% win rate, rating ~1238
-(the top of the ladder is ~3000+).
+FINDINGS = """You are reviewing the RESULTS of an experiment in a Kaggle farming simulation
+("Kaggriculture": 30 days, 720 turns, two players, market price is a deterministic
+function of market inventory). Our agent is a FIXED 720-step action tape; mean
+ladder bank ~$91k, rating ~1238 (the top of the ladder is ~3000+).
 
-CLAIM UNDER REVIEW: fertilizing our melon crop would add roughly +$10.5k per
-game, strawberry about +$3k, and fertilizing wheat would LOSE money. Therefore
-the next engineering step is a fertilizer overlay that applies our currently
-unsold fertilizer to melon (12 plantings/season) and strawberry.
+WHAT WE BELIEVED (round 1, this same review): a crop-growth trace published with
+the engine shows accumulated yield under a "watered" vs a "watered+fertilized"
+policy, and the deltas are MELON +4, WHEAT +4, STRAWBERRY +8, CARROT +2 units.
+Walked against the published price curve, that projected a fertilizer programme
+worth +$24.4k (melon, 36 applications), +$3.0k (strawberry, 5) and $0 (wheat). You
+reviewed that plan and raised (a) the trace measures LIFETIME yield under a policy,
+not yield per application, so melon would need ~3 applications per planting, (b)
+diverting fertilizer from sales risks defunding the same-turn buy queue, the exact
+failure that killed an earlier sell-chunk overlay, and (c) late-harvest yield can
+go unsold because the market order cap is 10 per turn.
 
-ENGINE FACTS (verified in the engine source):
-- WATER works once per day per tile and adds `yield_units` up to a cap, with
-  bonus 2 instead of 1 when the tile is fertilized. The watering bonus applies
-  only to non-ongoing crops inside a window: days (max_yield_day+1)//2 through
-  max_yield_day after planting.
-- FERTILIZE consumes one FERTILIZER unit and sets fertilized_until_day = day+2
-  (3 days inclusive). Fertilizer is also buyable and sellable.
-- Crops: WHEAT window days 2-4 cap 6; CARROT days 2-3 cap 4; MELON days 6-12 cap
-  6; TOMATO and STRAWBERRY are "ongoing" (they accumulate separately).
-- End of season: reward is money only, NO liquidation - unsold inventory and
-  standing crops are worth zero.
-- maxMarketOrdersPerTurn = 10 and extras are silently dropped.
+WHAT WE MEASURED INSTEAD. Patched the tape to suppress EVERY FERTILIZE it already
+makes (97 per game) and ran 8 paired games (4 seeds x both seats, same opponent).
+Results, per game:
+| metric            | control | no fertilizer | delta |
+| mean bank         |  79,274 |        76,196 | -3,078 |
+| crop harvest      |     375 |           236 |   -140 |
+| MELON             |      66 |            66 |    +0  |
+| STRAWBERRY        |     258 |           130 |   -128 |
+| CARROT            |      51 |            40 |    -12 |
+| fertilizer sold   |     288 |           372 |    +84 |
+| fertilizer applied|      97 |             0 |    -97 |
 
-PUBLISHED EVIDENCE USED:
-1. crop_growth_trace.csv (published with the engine), accumulated yield summed
-   over the tile's life under policies "watered_no_fertilizer" vs
-   "watered_fertilized": CARROT 7->9 (+2), WHEAT 11->15 (+4), MELON 38->42 (+4),
-   STRAWBERRY 16->24 (+8), TOMATO 10->14 (+4). We treat this delta as extra units
-   per fertilizer application.
-2. price_curve.csv (published): price at market inventory I0=10000 and above.
-   STRAWBERRY 120 at 10000, 82 at 10020, 1 at 10100. MILK 160, 118, 1.
-   WOOL 200, 177, 1. MELON 250 at 10000, 246 at 10020, 225 at 10050, 150 at
-   10100, 1 at 10200. WHEAT 25, 22, 21, 20 across the same range. EGG 50, 45,
-   43, 39. CARROT 35, 30, 27, 23, 9.
-3. Observed fertilizer economy over 30 of our own ladder games: collected 382
-   units/game, bought 66, SOLD 333, applied 97. Realized fertilizer sale price
-   ~$41.8/unit. So we sell 3.43 units for every one we apply.
-4. Our tape's planting counts per season: MELON 12, WHEAT ~170, STRAWBERRY 33,
-   CARROT 5-31, TOMATO 0.
-5. Spatial feasibility: a hand is standing on a non-ongoing crop that is inside
-   its window and unfertilized 1079.8 times/game; on 406.7 of those the tape is
-   watering that tile, on 60.5 it is idle (PASS), and 612.6 it is doing something
-   else. There are 141 tile-days per game where the same tile is watered more
-   than once (the second is a no-op).
+WHAT WE NOW CONCLUDE:
+1. The fertilizer the tape already applies IS productive: cancelling it costs
+   -$3,078 per game, about +$32 net per application. Not a dead lever.
+2. ALL of the value is on STRAWBERRY (+128 units, ~1.3 units per application).
+   MELON GAINS EXACTLY ZERO, which contradicts both round 1's plan and the
+   published growth trace's +4 melon delta.
+3. The accounting reconciles only at MARGINAL prices: forgoing ~84 fertilizer
+   sales costs ~$3.5k, and the lost 128 strawberry units are worth only ~$6.6k
+   (~$52/unit, not the ~$104 realised average).
+4. Therefore headroom is tiny: the curve allows only ~40 additional profitable
+   strawberry units, so at ~$32 per application the whole expansion is worth on
+   the order of +$160.
+5. We are closing the fertilizer lever and, with it, all four overlay levers we
+   have tried: roster mix (lost money in every variant), more animals (the tape is
+   saturated: zero free structure slots, 7.4% idle worker turns), sell-lot
+   chunking (lost all 24 paired games, twice), and now fertilizer.
 
-THE SIZING MODEL: assume the market sits at I0, assume we are the marginal
-supplier and the opponent's supply is unchanged. Walk the curve outward from
-I0: the k-th extra unit is worth curve(I0+k). Keep going while that price
-exceeds ~$42 (the fertilizer unit's opportunity cost = what we forgo by not
-selling it). Result:
-  crop        per appl   profitable units   applications   revenue   cost   net
-  MELON           +4            144              36         25,949   1,512  24,437
-  STRAWBERRY      +8             40               5          3,225     210   3,015
-  TOMATO          +4             52              13          2,477     546   1,931
-  WHEAT           +4              0               0              0       0       0
-  CARROT          +2              0               0              0       0       0
-Then we cap by plantings: MELON 12 plantings x 4 units = 48 units -> about
-+$10.5k; STRAWBERRY capped at 5 applications -> +$3.0k; TOMATO is unreachable
-because the tape never plants it. WHEAT and CARROT: zero.
-
-COUNTER-EVIDENCE AND PRIOR FAILURES:
-- A previous overlay that chunked sell orders to improve realized prices LOST
-  24 of 24 paired games (twice), and the "sell-layer opportunity" it was based on
-  turned out to be a selection artifact: the comparison corpus is published as
-  "top episode replays" selected by score, its own manifest shows scores around
-  3000, and our opponents IN OUR OWN GAMES realize the same prices we do.
-- A roster change experiment (more cows/sheep/geese) lost money in every variant.
-- The tape's early economy is cash-coupled: sells in a turn fund the buys that
-  follow them in the same market queue, so throttling sells defunded the farm.
-
-YOUR TASK: be adversarial and specific. Do NOT summarise or praise. Identify
-(a) any logical or arithmetic error in the sizing model above, (b) which of its
-assumptions is most likely to break in reality and in which direction that
-would bias the estimate, (c) whether the counter-evidence above should make us
-expect this lever to fail too, and why or why not, and (d) exactly what
-measurement or control would falsify the claim cheaply. If the claim is sound,
-say so plainly and say what its weakest link is. Answer in under 500 words."""
+YOUR TASK - be adversarial and specific, do NOT summarise or praise:
+(A) Do we over-conclude? Is +$3,078 from 8 games distinguishable from noise, and
+    what would a proper significance check look like here?
+(B) The MELON ZERO is the anomaly worth explaining. Propose the most likely
+    mechanism (fertilizer never landing on melon tiles? the window being missed?
+    the melon tile being harvested before the bonus pays?) and the single cheapest
+    diagnostic that would discriminate between those explanations.
+(C) If the tape's fertilizing is worth +$32/application on strawberry while
+    melon shows zero, is there a plausible way to REDIRECT the same fertilizer to
+    a better target, and what is the smallest experiment that would test it?
+(D) Given every overlay lever has now failed, is there any lever left that we have
+    not considered? Be concrete about what it is and what would falsify it.
+(E) Name the single weakest link in our reasoning above.
+Answer in under 500 words."""
 
 
 # %%
