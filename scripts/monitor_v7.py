@@ -1,5 +1,6 @@
 """Monitor production submission 56471176 (baseline_v7) on Kaggle."""
 
+import gzip
 import json
 from pathlib import Path
 import subprocess
@@ -41,13 +42,48 @@ def get_episodes() -> list[dict]:
     return clean_json_output(out)
 
 
+def compress_cached_replay(path: Path) -> None:
+    """Compress a freshly downloaded replay to <path>.gz, then drop the plain file.
+
+    The .gz is read back and compared with the source before anything is unlinked;
+    any failure leaves the plain .json in place so the caller still parses it.
+    """
+    gz_path = Path(f"{path}.gz")
+    try:
+        original = path.read_bytes()
+        with gzip.open(gz_path, "wb", compresslevel=9) as dst:
+            dst.write(original)
+        with gzip.open(gz_path, "rb") as f:
+            restored = f.read()
+        if restored != original:
+            raise ValueError(f"replay compression mismatch for {path}")
+    except (OSError, EOFError, ValueError):
+        try:
+            gz_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
 def download_and_parse_episode(ep_id: int) -> dict:
-    target = REPLAY_DIR / f"episode-{ep_id}-replay.json"
-    if not target.exists():
+    plain = REPLAY_DIR / f"episode-{ep_id}-replay.json"
+    compressed = REPLAY_DIR / f"episode-{ep_id}-replay.json.gz"
+    if not plain.exists() and not compressed.exists():
         run_cmd([".venv/bin/kaggle", "competitions", "replay", str(ep_id), "-p", str(REPLAY_DIR)])
-    
-    with open(target) as f:
-        data = json.load(f)
+        compress_cached_replay(plain)
+
+    target = plain if plain.exists() else compressed
+
+    if target.name.endswith(".gz"):
+        with gzip.open(target, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        with open(target) as f:
+            data = json.load(f)
     
     names = data.get("info", {}).get("TeamNames", ["Agent 0", "Agent 1"])
     rewards = data.get("rewards", [0, 0])
