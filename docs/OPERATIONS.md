@@ -145,6 +145,36 @@ Monitor all active models (V9.1 and V9):
 - A background scheduler is configured to run `scripts/monitor_all.py` on a 15-minute interval (`*/15 * * * *`).
 - Monitor logs and downloaded replay files are cached in `scratch/replays_v9_1/` and `scratch/replays_v9/`.
 
+### F. Host Harness Hardening (Pi TUI heap abort)
+
+**Incident — 2026-09-23 22:49:40 ART.** The Pi TUI aborted with SIGABRT (`Reached heap limit`, RSS 4.69 GB) and left the terminal in raw mode; apport captured `/var/crash/_usr_bin_node.1002.crash` (297 MB). Node v24.19.0's default V8 old-space ceiling is **4288 MB**, and Pi's bash tool truncates output at a hard-coded `BASH_OUTPUT_LIMIT = 100 * 1024` / `MAX_LINES = 2000` (not configurable) — so a long session that prints large dumps grows the TUI heap until it aborts.
+
+**Not the cause:** the corpus download and the gzip decompression. Both were exonerated by the apport dump and by re-running them afterwards.
+
+Hardening installed (host-level, outside this repository):
+
+1. **Heap ceiling** — `NODE_OPTIONS=--max-old-space-size=8192` (override with `PI_MAX_OLD_SPACE_MB`) exported from `~/.zshrc`, `~/.bashrc` and `~/.config/fish/config.fish`. Each rc only appends the flag when `NODE_OPTIONS` does not already carry a `--max-old-space-size`, so nesting sessions cannot stack flags.
+2. **Preflight wrapper** — `~/.local/bin/pi-safe [pi args...]` raises the ceiling and warns when free disk (`PI_MIN_FREE_DISK_GB`, default 10), available RAM (`PI_MIN_FREE_RAM_GB`, default 2) or swap use (`PI_MAX_SWAP_USED_PCT`, default 90) cross their thresholds, then execs `pi`.
+3. **Output discipline** — the `heavy-output-discipline` policy in `~/.pi/agent/APPEND_SYSTEM.md`: bound every command (`wc -c`, `head -c`, `grep -m`, `jq` projection), pipe bulk output to a file and interrogate the file instead of the transcript.
+4. **/tmp hygiene** — `/tmp` is **tmpfs**, so its contents are resident RAM. `~/.local/bin/pi-tmp-hygiene` removes only `pi-bash-*.log` files that are either older than 24 h or older than 1 h and at least 1 MiB; scheduled by the user timer `pi-tmp-hygiene.timer` (hourly, `OnBootSec=10min`, `RandomizedDelaySec=5m`, `Persistent=true`). It never touches other applications' data.
+5. **Crash dumps** — our three dumps were deleted (306 MB; the root-owned `kexec_cmd` was left alone), and apport is disabled host-wide with the command below.
+
+Verification:
+```bash
+node -p "require('v8').getHeapStatistics().heap_size_limit/1048576"   # 8384 from a fresh shell (8192 old space + 192 MB V8 overhead; default is 4288)
+systemctl --user list-timers --all | grep pi-tmp-hygiene
+~/.local/bin/pi-tmp-hygiene
+```
+
+Operating practice: keep `tuiMode: fullscreen`, launch long sessions through `pi-safe`, and open a **fresh** session after heavy analysis work instead of continuing a bloated transcript.
+
+Disable apport on this host (requires sudo):
+```bash
+sudo sed -i 's/^enabled=.*/enabled=0/' /etc/default/apport
+sudo systemctl stop apport.service apport-forward.socket apport-autoreport.timer apport-autoreport.path
+sudo systemctl disable apport.service apport-forward.socket apport-autoreport.timer apport-autoreport.path
+```
+
 ---
 
 ## 6. Critical Game Mechanics & Engineering Discoveries
