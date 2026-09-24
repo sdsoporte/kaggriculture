@@ -40,6 +40,8 @@ failure was missing mechanics, not missing data.**
       rule sheet against our own list of engine rules and traps.
 - [x] A3 — Fold the deltas into `docs/engine-rule-sheet.md`, a verified rule sheet
       that is now the appendix for every future brief.
+- [x] A4 — Measure the atomic-PLANT loss against our own tape: **incidence zero**,
+      closed as a null.
 - [ ] B1 — Arena plumbing: pass the model-proxy credentials into the notebook and
       prove one LLM call happens inside a match.
 - [ ] B2 — Bounded adversarial farmer: daily decisions only (30 per game), tape as
@@ -50,7 +52,7 @@ failure was missing mechanics, not missing data.**
       the absorption table.
 - [ ] C2 — Planner implementation and paired measurement against the tape.
 
-## Stage A evidence (A1-A3)
+## Stage A evidence (A1-A4)
 
 ### A1 — generator
 
@@ -107,6 +109,32 @@ for a crop exceeds stock plants *nothing* for that crop. Measure it read-only fr
 traces: per game, the turns where `plant_demand[crop] > seeds[crop]` and the
 plantings lost. This is a measurement, not an overlay, and it is a candidate for the
 next concrete lever.
+
+### A4 — the null, and the indexing bug that produced a false positive first
+
+The atomic PLANT rule was the most promising output of stage A: the only mechanic
+found that can silently destroy work the tape believes it did.
+`scripts/atomic_plant_probe.py` (8 mirror episodes = 16 observations of our tape)
+measures its incidence read-only from traces.
+
+**Result: 0 blocked turns, 0 voided plantings**, against 239-240 `PLANT` actions
+per seat-game. Our tape's seed ordering never lets a turn's plant demand exceed its
+stock. The rule is real in the engine and **theoretical for our tape**: closed as a
+null rather than carried as a lead. The three rule-sheet findings that remain
+stand on their own (the $1 floor, walking onto LOCKED, irremovable animals) and
+none of them is a lever either.
+
+**The first run reported 7.91% of all PLANT actions voided, and that was a false
+positive of the exact class this project keeps hitting.** The probe compared
+`action[i]`'s plant demand against the seeds in `steps[i]` - but the action is the
+one that PRODUCED that observation, so it acts on the pre-state at `steps[i-1]`,
+which is where the engine reads the seed table. Reading the same index shows seeds
+already consumed by this turn's own planting and invents blockages. The tell was
+arithmetic: the count implied more plantings than the tape has plantings to lose
+(it measurably lands 239 of its 240), which is why the contradiction was chased
+instead of reported. **This is the fourth time `steps[turn][seat]` has bitten this
+project.** The semantics are now settled in the probe's docstring so it does not
+happen a fifth time.
 
 ## Acceptance criteria
 

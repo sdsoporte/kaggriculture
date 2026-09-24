@@ -64,13 +64,17 @@ verified rows are here.
 
 ## What this changes for our own work
 
-1. **A new, concrete, testable hypothesis about our own tape.** The atomic PLANT
-   rule (`:919-931`) is the only mechanic here that can silently destroy work the
-   tape believes it did. Our tape plants ~170 WHEAT and 33 STRAWBERRY with
-   hand-timed `BUY_SEED` orders; any turn whose PLANT demand exceeds stock voids
-   that crop's plantings for the turn. Worth measuring: count, per game, the turns
-   where `plant_demand[crop] > seeds[crop]` and how many plantings the tape lost.
-   This is a cheap read-only trace measurement, not an overlay.
+1. **The atomic PLANT rule was measured against our tape and does NOT fire.**
+   It was the most promising finding here - the only mechanic that can silently
+   destroy work the tape believes it did - so it was measured read-only from
+   traces (`scripts/atomic_plant_probe.py`, 8 mirror episodes = 16 observations):
+   **0 blocked turns and 0 voided plantings**, against 239-240 `PLANT` actions per
+   seat-game. Our tape's seed ordering is tight enough that its plant demand never
+   exceeds its stock in any turn, so this rule is theoretical for us. Closed as a
+   null, not left as a lead.
+   *(The first run of that probe reported 7.91% of PLANT actions voided, which was
+   a false positive from reading seeds at the wrong trace index; see the probe's
+   docstring.)*
 2. **Rules 2 and 3 retire assumptions.** "Sell into the floor to hurt the
    opponent" is impossible, and hands may cross locked quadrants.
 3. **Rule 4 explains a boundary we had already measured.** Roster changes could
