@@ -34,10 +34,10 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
 
 ```json
 {
-  "schema": "kaggriculture-plan/2",
+  "schema": "kaggriculture-plan/3",
   "land": {
     "quadrants": 3,
-    "buy_days": [1, 6, 12]
+    "buy_days": [1, 6]
   },
   "hands": {
     "start": 4,
@@ -45,16 +45,16 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
     "daily_target": 12
   },
   "crops": [
-    {"crop": "WHEAT",      "tiles": 60, "plant_days": [0, 8, 16, 24], "fertilize_tiles": 0},
-    {"crop": "STRAWBERRY", "tiles": 33, "plant_days": [1, 3, 5],      "fertilize_tiles": 25},
-    {"crop": "CARROT",     "tiles": 20, "plant_days": [1, 11, 25],    "fertilize_tiles": 4},
+    {"crop": "WHEAT",      "tiles": 30, "plant_days": [0, 8, 16, 24], "fertilize_tiles": 0},
+    {"crop": "CARROT",     "tiles": 10, "plant_days": [1, 11, 25],    "fertilize_tiles": 3},
     {"crop": "TOMATO",     "tiles": 0,  "plant_days": [4],           "fertilize_tiles": 0},
-    {"crop": "MELON",      "tiles": 12, "plant_days": [0, 12],        "fertilize_tiles": 0}
+    {"crop": "STRAWBERRY", "tiles": 20, "plant_days": [1, 3, 5],     "fertilize_tiles": 15},
+    {"crop": "MELON",      "tiles": 6,  "plant_days": [0, 12],       "fertilize_tiles": 0}
   ],
   "animals": [
-    {"animal": "COW",   "count": 9, "buy_days": [3, 4, 5]},
-    {"animal": "SHEEP", "count": 5, "buy_days": [6, 7]},
-    {"animal": "GOOSE", "count": 3, "buy_days": [8]}
+    {"animal": "COW",   "count": 4, "buy_days": [3, 4, 5, 6]},
+    {"animal": "SHEEP", "count": 3, "buy_days": [7, 8, 9]},
+    {"animal": "GOOSE", "count": 2, "buy_days": [10, 11]}
   ],
   "market": {
     "sell_chunk_cap": 0,
@@ -63,6 +63,11 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
   }
 }
 ```
+
+Note the arithmetic, because it is now an enforced invariant: 66 crop tiles plus 9
+animal structures is exactly the 75 cells three quadrants unlock. **The example
+itself was invalid until revision 3** - it asked for 125 crops plus 17 structures,
+142 cells, and nothing caught it because each field was individually in range.
 
 ### Field reference
 
@@ -84,14 +89,25 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
 | `market.sell_from_day` | Day from which throttling applies | 0-29 | The last animal purchase is turn 266 (day 11), so throttling before day 12 defunds the farm. This field exists so the search can move it safely. |
 | `market.seed_reserve` | Seeds of each crop to keep in stock before planting | 0-100 | Seeds are bought into `private["seeds"]`, never the shed. The engine's atomic PLANT rule (`:919-931`) voids EVERY PLANT of a crop whose turn demand exceeds stock - measured as never firing on our tape, but a re-planned crop schedule could change that, so the reserve must be expressible. |
 
-## Revision 2 - and why the vector is a set of targets
+## Revisions 2 and 3 - and why the vector is a set of targets
 
-Revision 1 was frozen before anyone tried to describe our OWN tape with it. That
-check (`scripts/tape_to_plan.py`, W2a of `odd/tasks/planner-large.md`) failed, and
-four fields changed as a result: `hands.ramp_step`, `crops[].plant_days`,
-`crops[].fertilize_tiles`, and the `0` sentinel on `market.sell_chunk_cap`. Each
-row above records its own reason. The version string is `kaggriculture-plan/2` so a
-plan written against revision 1 is **rejected rather than silently misread**.
+**Revision 3** added the global tile budget (invariant 9) and states explicitly what
+revision 2 left ambiguous: `animals[].count` must EQUAL `len(buy_days)`, one day per
+animal. Both gaps were found by the LLM author task rather than by us, which is the
+right outcome for a contract: it was exercised by something that did not know our
+intentions.
+
+| gap | found by | what made it visible |
+|---|---|---|
+| no global tile budget | `claude-opus-4-5` | a plan of 125 crop tiles + 17 structures on 75 unlocked cells that passed every per-field bound |
+| `count` vs `len(buy_days)` unspecified | both models | COW 8 animals over 3 listed days - a consumer cannot read that unambiguously |
+
+The example JSON above was itself impossible until this revision, which is a fair
+comment on how these contracts get written.
+
+**Revision 2** was the first revision written from evidence rather than intent.
+Revision 1 was frozen before anyone tried to describe our OWN tape with it, and that
+check failed:
 
 The same check produced a second, more important finding: **the vector is not
 deterministic.** Across seeds, `land` is identical but `hands`, `market`, `crops`
@@ -134,6 +150,12 @@ vector, because each is a measured engine rule or a measured failure:
 7. **Sell at the $1 floor without fear**: a floor sale does not move market
    inventory (`:659-660`), so it cannot depress the price further.
 8. **Keep the shed under 100 units**; the overflow is discarded.
+9. **The plan must fit the board.** `sum(crops[].tiles) + sum(animals[].count)` must
+   not exceed the cells the requested quadrants unlock (25 per quadrant on the
+   default 10x10 board). **Added in revision 3**, and it is the only invariant here
+   that is not per-field: an LLM plan passed every individual bound while asking for
+   142 cells on 75 unlocked ones, and nothing caught it. A per-field range cannot
+   see a farm that does not fit.
 
 ## What is deliberately NOT a parameter
 
