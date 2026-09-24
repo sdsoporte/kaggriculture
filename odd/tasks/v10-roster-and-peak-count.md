@@ -62,10 +62,9 @@ superior.** Quantified so it is falsifiable:
 - [x] T3 Build the variants - **DONE, but the design changed** (2026-09-24).
       The tape cannot host MORE animals; it can host a different MIX at the same
       slots. The swap also has to start at step 150. See "T3 variants" below.
-- [ ] T4 Run the paired benchmark for each variant vs the baseline: 12 seeds
-      (24 games) per variant, ~105 s each at the measured 4.3 s/game.
-- [ ] T5 Analysis + decision gate against the acceptance criteria; write the verdict
-      into this file. Only then does implementation or submission become a question.
+- [x] T4 Run the paired benchmark for each variant vs the baseline: 12 seeds
+      (24 games) per variant - DONE (2026-09-24), 102-108 s each.
+- [x] T5 Analysis + decision gate - **VERDICT: FAIL**. See the T5 section below.
 
 ## Calibration from T1 (measured, 2026-09-24)
 
@@ -181,6 +180,43 @@ build VERB (`["COOP"]` instead of `["BUILD_COOP"]`), which the engine ignores
 silently - that is how the first goose variant produced zero structures and zero
 animals with no error anywhere.
 
+## T5 verdict (2026-09-24): FAIL - V10 does not ship
+
+| variant | win rate | mean margin | seats agree | verdict |
+| --- | --- | --- | --- | --- |
+| `v10_cow` | 41.7% (10-14) | **-$9,072** | 12/12 seeds | FAIL |
+| `v10_sheep` | 50.0% (12-12) | +$1,933 | 12/12 seeds | FAIL |
+| `v10_goose` | 41.7% (10-14) | **-$1,998** | 12/12 seeds | FAIL |
+
+Acceptance was >=65% win rate AND >=+$5,000 mean margin. Nothing came within a
+factor of five on margin, and two of the three are actively harmful.
+
+**Robustness.** In all 36 seeds the sign agrees across the seat swap (mixed = 0),
+so these are systematic deterministic effects, not noise - the same property T1
+found in the mirror. Consequence: the sheep variant's 12-12 with +$1,933 is a
+genuine coin flip, not a narrow win, and a 50% win rate is worth ~0 Elo in the
+Bradley-Terry final.
+
+### What it settles
+
+1. The corpus finding "winners are cow-heavy" was selection on the outcome: making
+   OUR roster cow-heavy costs $9,072. Correlational, now refuted causally.
+2. The marginal model's "+6 GOOSE = +$6,189" is refuted head-to-head (-$1,998 for
+   geese). That agrees with the measured per-tile revenue (GOOSE $2,228 < COW
+   $3,219 < SHEEP $3,506) and with the earlier falsification of the goose thesis.
+3. The documented open conflict (marginal model vs corpus) therefore CLOSES as: do
+   not tilt the roster either way. The baseline mix wins.
+
+**Decision**: no submission, no slot eviction. The incumbents stay - `56513137`
+(the V8 recovery, converging) and `56501811` (V9.1 at 1222.8) - and play out to the
+2026-09-30 deadline. V10 as a tape overlay is closed.
+
+**Why this is a result and not a failure to try**: the bar required an edge worth
+evicting an active slot, and the experiment was built so that a silent no-op could
+not pass it (T2 landing gate, plus the null-swap proof of the wrapper). Three
+variants, 72 paired games, zero escapes, zero landing failures - and a clean no.
+That is worth more than a hopeful submission.
+
 ## Constraints / non-goals
 
 - **The tape cannot be regenerated.** Verified: `_BLOB` is base64+zlib JSON, there
@@ -225,3 +261,7 @@ animals with no error anywhere.
   match (COW 12 / SHEEP 9 / GOOSE 11). Null swap proves the wrapper is faithful.
   pytest 13 passed. First goose attempt (structure name instead of BUILD_ verb)
   produced 0 structures / 0 animals - caught by the gate, then pinned by a test.
+- 2026-09-24 - **T4/T5 DONE. VERDICT: FAIL.** 12 seeds (24 games) per variant vs
+  `main_v8`: cow 41.7% / -$9,072, sheep 50.0% / +$1,933, goose 41.7% / -$1,998.
+  Seat-sign agreement 12/12 for all three (systematic, not noise). No submission.
+  Logs: `/tmp/t4_cow.log`, `/tmp/t4_sheep.log`, `/tmp/t4_goose.log`.
