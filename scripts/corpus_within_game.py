@@ -26,10 +26,17 @@ import argparse
 import collections
 import json
 import statistics
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 CACHE = REPO / "scratch" / "corpus_full"
+sys.path.insert(0, str(REPO / "src"))
+
+from kaggriculture.agents.replay_opponent import make_replay_opponent  # noqa: E402
+from kaggriculture.loading import load_agent  # noqa: E402
+from kaggriculture.runner import run_episode_trace  # noqa: E402
+
 TURNS_PER_DAY = 24
 CROPS = ("WHEAT", "CARROT", "TOMATO", "STRAWBERRY", "MELON")
 ANIMALS = ("COW", "SHEEP", "GOOSE")
@@ -192,13 +199,115 @@ def recipe(games):
     print("BUY_LAND seria un test limpio de la compra en si.")
 
 
+def versus_replays(agent_path, count):
+    """Run OUR agent against real opponents and separate winner from loser THERE.
+
+    The within-game table above compares two corpus teams against each other. This
+    runs the same comparison on the matches WE play, which answers the question our
+    own win rate actually depends on: in the games we lose to real top-team
+    recordings, what does the opponent do more of than us?
+
+    The opponent is OPEN-LOOP, so its realised profile is its recorded play and not
+    an adaptation. That weakens it as an opponent and does not weaken it as a
+    measuring stick for our own behaviour.
+    """
+    ours = []
+    failures = []
+    for path in sorted(CACHE.glob("*.json"))[:count]:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        steps = data.get("steps") if isinstance(data, dict) else data
+        if not steps or len(steps) < 100:
+            continue
+        info = data.get("info") if isinstance(data, dict) else None
+        seed = (info or {}).get("seed")
+        if seed is None and isinstance(data, dict):
+            seed = (data.get("configuration") or {}).get("seed")
+        for opponent_seat in (0, 1):
+            opponent = make_replay_opponent(steps=steps, seat=opponent_seat)
+            if opponent_seat == 1:
+                pair = (load_agent(str(agent_path)), opponent)
+                our_seat = 0
+            else:
+                pair = (opponent, load_agent(str(agent_path)))
+                our_seat = 1
+            try:
+                trace = run_episode_trace(pair[0], pair[1], int(seed or 0))
+            except Exception as exc:  # noqa: BLE001
+                # A skipped episode must be VISIBLE. Silently dropping it would shrink
+                # the sample while the win rate still looked clean.
+                failures.append(f"{path.stem} seat {opponent_seat}: "
+                                f"{type(exc).__name__}: {exc}")
+                continue
+            mine = profile_seat(trace["steps"], our_seat)
+            theirs = profile_seat(trace["steps"], opponent_seat)
+            mine["bank"] = trace["banks"][our_seat]
+            theirs["bank"] = trace["banks"][opponent_seat]
+            ours.append((mine, theirs))
+    return ours, failures
+
+
+def report_versus(rows, failures):
+    if failures:
+        print(f"EPISODIOS SALTADOS: {len(failures)}")
+        for line in failures[:10]:
+            print(f"   {line}")
+    if not rows:
+        print("no games")
+        return
+    wins = sum(1 for mine, _ in rows if mine["bank"] > _["bank"])
+    print(f"partidas nuestras contra replay opponents: {len(rows)}")
+    print(f"ganamos {wins}/{len(rows)} = {wins / len(rows):.1%}")
+    margins = [mine["bank"] - theirs["bank"] for mine, theirs in rows]
+    print(f"margen medio ${statistics.mean(margins):+,.0f}"
+          f"  |  nuestros bancos medianos ${statistics.median([m['bank'] for m, _ in rows]):,.0f}"
+          f" vs ${statistics.median([t['bank'] for _, t in rows]):,.0f}")
+    print()
+    # Winner minus loser, restricted to OUR games, so the direction says what to copy.
+    pairs = [(mine, theirs) if mine["bank"] >= theirs["bank"] else (theirs, mine)
+             for mine, theirs in rows]
+    print(f"{'metrica':<20}{'ganador':>11}{'perdedor':>11}{'delta':>10}{'gana mas a menudo':>19}")
+    print("-" * 71)
+    out = []
+    for metric in METRICS:
+        more = sum(1 for winner, loser in pairs
+                   if winner.get(metric, 0) > loser.get(metric, 0))
+        less = sum(1 for winner, loser in pairs
+                   if winner.get(metric, 0) < loser.get(metric, 0))
+        wv = statistics.median([winner.get(metric, 0) for winner, _ in pairs])
+        lv = statistics.median([loser.get(metric, 0) for _, loser in pairs])
+        out.append((metric, wv, lv, wv - lv, more / max(1, more + less)))
+    for metric, wv, lv, delta, share in sorted(out, key=lambda r: -abs(r[4] - 0.5)):
+        flag = "  <-- separa" if abs(share - 0.5) >= 0.15 else ""
+        print(f"{metric:<20}{wv:>11.1f}{lv:>11.1f}{delta:>+10.1f}{share:>19.1%}{flag}")
+    print()
+    lost = [(mine, theirs) for mine, theirs in rows if mine["bank"] <= theirs["bank"]]
+    print(f"EN LAS {len(lost)} PARTIDAS QUE PERDIMOS, que hicieron ellos mas que nosotros:")
+    for metric in METRICS:
+        they = statistics.median([t.get(metric, 0) for _, t in lost]) if lost else 0
+        we = statistics.median([m.get(metric, 0) for m, _ in lost]) if lost else 0
+        if they > we:
+            print(f"   {metric:<20} ellos {they:>9.1f} | nosotros {we:>9.1f} | +{they - we:.1f}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--files", type=int, default=100)
     ap.add_argument("--recipe", action="store_true",
                     help="segment seats by quadrant count instead of comparing winner vs loser")
+    ap.add_argument("--vs", type=int, default=0, metavar="N",
+                    help="run OUR agent against the first N replay opponents and separate there")
+    ap.add_argument("--agent", default="src/kaggriculture/agents/baseline_v8.py",
+                    help="agent under test for --vs")
     args = ap.parse_args()
+
+    if args.vs:
+        rows, failures = versus_replays(REPO / args.agent, args.vs)
+        report_versus(rows, failures)
+        return
 
     files = sorted(CACHE.glob("*.json"))[:args.files]
     if not files:
