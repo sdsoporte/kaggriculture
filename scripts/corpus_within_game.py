@@ -146,10 +146,58 @@ def profile_seat(steps, seat):
     }
 
 
+def _ratio(top, bottom):
+    """Ratio that never raises, for a report where a zero denominator is meaningful."""
+    try:
+        return top / bottom
+    except ZeroDivisionError:
+        return float("inf")
+
+
+def recipe(games):
+    """What ELSE comes with the 4th quadrant?
+
+    The timing test settled that buying it is a lever, not a symptom: buyers take it
+    on day 10 while a median $3,495 BEHIND and win 70% against 41% for the seats that
+    never buy. But if buyers ALSO hire more, sell more often or plant more, then a
+    variant that only adds BUY_LAND would spend $4,000 on 25 idle cells and measure
+    the cost of land with none of the recipe.
+    """
+    groups = {3: [], 4: []}
+    for _, a, b in games:
+        for prof, other in ((a, b), (b, a)):
+            prof["won"] = prof["bank"] > other["bank"]
+            if prof["quadrants"] in groups:
+                groups[prof["quadrants"]].append(prof)
+
+    three, four = groups[3], groups[4]
+    if not three or not four:
+        print(f"necesito los dos grupos; tengo 3q={len(three)} 4q={len(four)}")
+        return
+
+    for label, group in (("3 cuadrantes", three), ("4 cuadrantes", four)):
+        wins = sum(1 for p in group if p["won"])
+        print(f"asientos con {label}: {len(group)}  (gana {wins} = {wins / len(group):.1%})")
+    print()
+    print(f"{'metrica':<20}{'3 cuadrantes':>14}{'4 cuadrantes':>14}{'ratio':>9}{'delta':>12}")
+    print("-" * 69)
+    for metric in METRICS:
+        a = statistics.median([p.get(metric, 0) for p in three])
+        b = statistics.median([p.get(metric, 0) for p in four])
+        shown = "n/a" if a == 0 else f"{_ratio(b, a):>9.2f}"
+        print(f"{metric:<20}{a:>14.1f}{b:>14.1f}{shown:>9}{b - a:>+12.1f}")
+    print()
+    print("ratio > 1 = los compradores del 4to cuadrante hacen MAS de eso.")
+    print("Cerca de 1 = el 4to cuadrante no viene con receta, y un variant de SOLO")
+    print("BUY_LAND seria un test limpio de la compra en si.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--files", type=int, default=100)
+    ap.add_argument("--recipe", action="store_true",
+                    help="segment seats by quadrant count instead of comparing winner vs loser")
     args = ap.parse_args()
 
     files = sorted(CACHE.glob("*.json"))[:args.files]
@@ -187,6 +235,10 @@ def main():
     print(f"partidas decididas por menos del 5% del banco: {close}/{len(games)}"
           f" ({close / len(games):.0%})")
     print()
+
+    if args.recipe:
+        recipe(games)
+        return
 
     # One (winner, loser) pair per game, so every metric is compared within a match.
     pairs = [(a, b) if a["bank"] >= b["bank"] else (b, a) for _, a, b in games]
