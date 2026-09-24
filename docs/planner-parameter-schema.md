@@ -34,21 +34,22 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
 
 ```json
 {
-  "schema": "kaggriculture-plan/1",
+  "schema": "kaggriculture-plan/2",
   "land": {
     "quadrants": 3,
     "buy_days": [1, 6, 12]
   },
   "hands": {
-    "daily_target": 10,
-    "ramp_day": 2
+    "start": 4,
+    "ramp_step": 1,
+    "daily_target": 12
   },
   "crops": [
-    {"crop": "WHEAT",      "tiles": 60, "plant_first_day": 0,  "replant_every": 8,  "fertilize": false},
-    {"crop": "STRAWBERRY", "tiles": 33, "plant_first_day": 1,  "replant_every": 0,  "fertilize": true},
-    {"crop": "CARROT",     "tiles": 20, "plant_first_day": 1,  "replant_every": 10, "fertilize": false},
-    {"crop": "TOMATO",     "tiles": 0,  "plant_first_day": 4,  "replant_every": 0,  "fertilize": false},
-    {"crop": "MELON",      "tiles": 12, "plant_first_day": 0,  "replant_every": 12, "fertilize": false}
+    {"crop": "WHEAT",      "tiles": 60, "plant_days": [0, 8, 16, 24], "fertilize_tiles": 0},
+    {"crop": "STRAWBERRY", "tiles": 33, "plant_days": [1, 3, 5],      "fertilize_tiles": 25},
+    {"crop": "CARROT",     "tiles": 20, "plant_days": [1, 11, 25],    "fertilize_tiles": 4},
+    {"crop": "TOMATO",     "tiles": 0,  "plant_days": [4],           "fertilize_tiles": 0},
+    {"crop": "MELON",      "tiles": 12, "plant_days": [0, 12],        "fertilize_tiles": 0}
   ],
   "animals": [
     {"animal": "COW",   "count": 9, "buy_days": [3, 4, 5]},
@@ -56,7 +57,7 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
     {"animal": "GOOSE", "count": 3, "buy_days": [8]}
   ],
   "market": {
-    "sell_chunk_cap": 10,
+    "sell_chunk_cap": 0,
     "sell_from_day": 12,
     "seed_reserve": 24
   }
@@ -69,19 +70,46 @@ A plan is one JSON object. All fields are required; unknown fields are an error.
 |---|---|---|---|
 | `land.quadrants` | Quadrants to unlock (NW is free) | 1-4 | Costs 1000/2000/4000 and is the binding physical limit the profiling found. `1` means NW only. |
 | `land.buy_days` | Day on which each unlock is attempted, in order | 0-29, ascending | The tomato overlay died at the step-150 (~day 6) `BUY_LAND` cliff: missing it by $114 permanently lost a quadrant. Buy timing is load-bearing and must be a decision. |
-| `hands.daily_target` | Farm hands hired each morning | 0-14 | Labour is the multiplier on every other decision. Fibonacci cost: 12 hands = $376/day, 13 = $609, 14 = $986. |
-| `hands.ramp_day` | Day the target becomes active | 0-29 | The tape's early cash is on a knife-edge ($24 left on day 0), so the ramp is a decision, not a constant. |
+| `hands.start` | Farm hands hired on day 0 | 0-14 | Labour is the multiplier on every other decision. Fibonacci cost: 12 hands = $376/day, 13 = $609, 14 = $986. The tape's early cash is on a knife-edge ($24 left on day 0), so the starting count is a decision. |
+| `hands.ramp_step` | Hands added each day until the target is reached | 0-14 | **Added in revision 2.** The tape uses seven distinct hand counts `[4,5,8,9,10,11,12]`; revision 1 had `daily_target` + a single `ramp_day`, a step function that cannot describe a curve. |
+| `hands.daily_target` | Maximum hands the ramp grows to | 0-14 | The cap on the ramp. |
 | `crops[].crop` | One of WHEAT, CARROT, TOMATO, STRAWBERRY, MELON | - | - |
 | `crops[].tiles` | Target number of tiles held under this crop | 0-100 | The absorption headroom we measured: TOMATO +266 units unproduced, STRAWBERRY +253, WHEAT +291, against MELON already overproduced 2.2x. |
-| `crops[].plant_first_day` | Day of the season's first planting | 0-29 | Crop windows are strict (`CROPS`, `:12-16`) and the tape's choreography is window-specific. |
-| `crops[].replant_every` | Replant period in days; `0` = plant once and never replant (ongoing crops) | 0-29 | This is the field that makes TOMATO or STRAWBERRY viable where a payload swap was not: the swap failed because the tape waters on wheat's window, not the new crop's. |
-| `crops[].fertilize` | Whether this crop's tiles are fertilized | bool | Verified: the tape's existing fertilizing is worth +$3,078/game, all of it on STRAWBERRY, ~zero on MELON (cap absorption), and MELON tiles cap at 6 unfertilized. |
+| `crops[].plant_days` | Explicit days on which to (re)plant this crop, ascending | 0-29 each, 1-30 entries | **Replaced `plant_first_day` + `replant_every` in revision 2.** One period per crop cannot express a non-uniform calendar, and the engine's windows are per-crop (`CROPS`, `:12-16`), so the calendar is the decision. The search moves this field as a SET (add, remove or shift a day), which is a coordinate move, not a continuous one. |
+| `crops[].fertilize_tiles` | How many of this crop's tiles to fertilize | 0 to `tiles` | **Replaced the boolean in revision 2.** The tape fertilizes **6 of 30** carrot tiles (20%), which a per-crop boolean cannot express. Verified value: the tape's existing fertilizing is worth +$3,078/game, all of it on STRAWBERRY, ~zero on MELON (cap absorption). |
 | `animals[].animal` | One of COW, SHEEP, GOOSE | - | - |
 | `animals[].count` | Animals of this species placed | 0-30 | Structures sit on tiles and a placed animal **cannot be removed** (`:484-490`), so this is irreversible within a season. |
 | `animals[].buy_days` | Days on which to buy this species (one animal per listed day) | 0-29 | Purchase timing competes with seed cash for the same early money. |
-| `market.sell_chunk_cap` | Maximum units per sell order | 1-100 | Measured: our lots of 10.6 units over 23.5 sale points fetch less than the top teams' 3.8 units over 52.8 points. Capping lots is the mechanism; the earlier sell-chunk overlay failed only because it defunded the buy queue before day 12. |
+| `market.sell_chunk_cap` | Maximum units per sell order; **`0` means no throttle** | 0-100 | **The `0` sentinel was added in revision 2.** Measured: our lots of 10.6 units over 23.5 sale points fetch less than the top teams' 3.8 units over 52.8 points, so capping is the mechanism - but the tape itself has NO cap (median lot 5, max 50), and revision 1 could only express that as `cap=100`, which loses the intent. The earlier sell-chunk overlay failed only because it defunded the buy queue before day 12. |
 | `market.sell_from_day` | Day from which throttling applies | 0-29 | The last animal purchase is turn 266 (day 11), so throttling before day 12 defunds the farm. This field exists so the search can move it safely. |
 | `market.seed_reserve` | Seeds of each crop to keep in stock before planting | 0-100 | Seeds are bought into `private["seeds"]`, never the shed. The engine's atomic PLANT rule (`:919-931`) voids EVERY PLANT of a crop whose turn demand exceeds stock - measured as never firing on our tape, but a re-planned crop schedule could change that, so the reserve must be expressible. |
+
+## Revision 2 - and why the vector is a set of targets
+
+Revision 1 was frozen before anyone tried to describe our OWN tape with it. That
+check (`scripts/tape_to_plan.py`, W2a of `odd/tasks/planner-large.md`) failed, and
+four fields changed as a result: `hands.ramp_step`, `crops[].plant_days`,
+`crops[].fertilize_tiles`, and the `0` sentinel on `market.sell_chunk_cap`. Each
+row above records its own reason. The version string is `kaggriculture-plan/2` so a
+plan written against revision 1 is **rejected rather than silently misread**.
+
+The same check produced a second, more important finding: **the vector is not
+deterministic.** Across seeds, `land` is identical but `hands`, `market`, `crops`
+and `animals` all vary, because the tape is reactive to the engine's state rather
+than a function of season-level decisions.
+
+That is not a defect in the schema - it defines what the fields MEAN. Every field
+above is a **season-level target or calendar**, and the consumer is responsible for
+realising it against the live state each turn: assigning `crops[].tiles` to
+specific tiles, attempting `plant_days` when capacity and cash allow, growing hands
+by `ramp_step` only while money permits. The schema says what the season is meant
+to look like, never which unit does what on which turn.
+
+It also means the W2c calibration gate had to be rewritten: "the tape's own vector
+must reproduce the tape's bank" is unachievable by construction, because this schema
+deliberately does not describe the tape. W2c is now an internal-consistency check
+(the expected plantings, animals and quadrants actually happen), and the comparison
+against the tape is the end acceptance test.
 
 ## Invariants the consumer must enforce
 

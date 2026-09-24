@@ -40,24 +40,34 @@ same-turn sell-then-buy coupling.
       are only the two `kaggle/bench/` files and the worker must not commit.
 - [ ] W1b — Extract both models' plans and diff them against our measured
       headroom (delegated with W1a; the diff and the verdict are mine).
-- [ ] W2a — **Gate: express the tape itself as a `kaggriculture-plan/1` vector.**
-      This step exists because the schema was frozen fast and W1 is already
-      authoring against it. If the schema cannot describe our OWN tape, an LLM
-      plan written against it is worthless. It also yields the calibration
-      baseline and the search's start point.
+- [x] W2a — **Gate: express the tape itself as a `kaggriculture-plan/1` vector.**
+      **FAILED, by design, and that was the point.** The schema could not describe
+      the tape: four fields had to change (see W2a2), and the vector turned out not
+      to be deterministic across seeds. Evidence: `scripts/tape_to_plan.py`.
+- [x] W2a2 — Schema revision 2: `hands.start` + `ramp_step` + `daily_target` (the
+      tape uses seven distinct hand counts, a step function cannot describe a
+      curve), `crops[].plant_days` (an explicit calendar; one period cannot express
+      a non-uniform one), `crops[].fertilize_tiles` (the tape fertilizes 6 of 30
+      carrot tiles), and `0` as the no-throttle sentinel on
+      `market.sell_chunk_cap`. Version bumped to `kaggriculture-plan/2` so a plan
+      written against revision 1 is **rejected rather than silently misread**.
 - [ ] W2b — `src/kaggriculture/agents/param_agent.py`: the vector consumer, with
       the schema's eight invariants each pinned by a unit test.
-- [ ] W2c — Calibration: the tape's own vector, consumed, must reproduce the
-      tape's bank within noise. If it does not, the consumer is unfaithful and a
-      search result is uninterpretable.
+- [ ] W2c — **Rewritten after W2a.** The original form ("the tape's own vector,
+      consumed, must reproduce the tape's bank") is unachievable by construction:
+      the schema deliberately does not describe the tape, because its fields are
+      season-level targets the consumer realises against the live state. It is now
+      an **internal-consistency check**: the expected plantings, animals and
+      quadrants must actually happen. The comparison against the tape is the end
+      acceptance test, not a calibration step.
 - [ ] W2d — Offline search over the vector with the engine as simulator.
 - [ ] W2e — Bake the winning vector into a single-file submission candidate.
 
 ## Acceptance criteria
 
-- **W2a and W2c are the gates.** If the schema cannot express the tape, fix the
-  schema before consuming any LLM plan (W2a). If the tape's own vector consumed
-  does not reproduce the tape's bank, the consumer is wrong, not the search (W2c).
+- **W2a was the gate and it failed on purpose**, which is why the schema is now
+  revision 2. W2c is a second gate, rewritten: the consumer must be internally
+  consistent, and the tape comparison is the end test.
 - The search result is accepted only if a paired benchmark beats the tape with a CI
   excluding zero, measured with the bank printed beside the margin.
 - The LLM's plan is compared against our own headroom numbers. Its arithmetic is a
