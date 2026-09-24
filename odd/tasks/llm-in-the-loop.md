@@ -17,20 +17,18 @@ failure was missing mechanics, not missing data.**
 
 ## Stages
 
-- **A — engine reader.** Give a model the COMPLETE engine source and ask for the
-  authoritative rule sheet: per-verb quote rules, every quantity cap, every
-  silently-dropped input, and every mechanic that makes a plausible market
-  strategy illegal or self-cancelling. Output is diffed against our own rule list.
-  Cheap (one push, minutes), and it makes every future brief better.
+- **A — engine reader.** CLOSED (A1-A4). See the evidence below.
 - **B — adversarial farmer.** A model plays, through the arena, with the goal of
   punishing our tape rather than beating it on average. Our whole evaluation
   problem is that every opponent we have is too weak (10 of 10 published
   reference agents beaten by $100k+), so any variant of our tape also wins; an
   adversary is the only new source of pressure available.
-- **C — planner author.** A model authors the offline planner, constrained by the
-  engine rule sheet from A and by the eight measured V10 verdicts, which are hard
-  constraints rather than suggestions. This is the only path to a materially
-  better tape.
+- **C — planner author.** **MIGRATED to `odd/tasks/planner-large.md`** (C-Largo).
+  It was scoped here as a stage, but it is a feature of its own: it needed a frozen
+  parameter schema, a consumer, an offline search and a bake step, and it is the
+  only workstream that can move the score before the 2026-09-30 deadline. Keeping
+  it here as one checkbox would have hidden its size. Stage B stays in this
+  feature and is now its only open work.
 
 ## Tasks
 
@@ -48,9 +46,7 @@ failure was missing mechanics, not missing data.**
       the executor, against our tape, ~20-30 games.
 - [ ] B3 — Harvest the losses: where does our tape get punished, and is it a
       mechanism we have not closed.
-- [ ] C1 — Planner brief: engine rule sheet (A3) + the eight measured verdicts +
-      the absorption table.
-- [ ] C2 — Planner implementation and paired measurement against the tape.
+- [x] C1, C2 — **migrated** to `planner-large` as W1/W2. Not tracked here.
 
 ## Stage A evidence (A1-A4)
 
