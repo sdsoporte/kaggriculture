@@ -101,6 +101,21 @@ def test_fertilize_tiles_cannot_exceed_tiles():
         validate_plan(plan)
 
 
+def test_a_zero_tile_crop_may_have_no_planting_days():
+    # An LLM plan supplied plant_days [] for a zero-tile TOMATO while revision 3's own
+    # example wrote ["4"]. Both mean "never grow this", so [] must be legal there.
+    plan = plan_v3()
+    plan["crops"][2]["plant_days"] = []  # index 2 is TOMATO, tiles 0
+    assert validate_plan(plan) is not None
+
+
+def test_a_crop_with_tiles_must_have_a_planting_day():
+    plan = plan_v3()
+    plan["crops"][0]["plant_days"] = []  # index 0 is WHEAT, which has tiles
+    with pytest.raises(PlanError, match="non-empty"):
+        validate_plan(plan)
+
+
 def test_a_plan_that_needs_more_cells_than_are_unlocked_is_rejected():
     # Global invariant 9, and it exists because of a real LLM plan: 125 crop tiles
     # plus 17 animal structures = 142 cells on 75 unlocked ones, which passed EVERY

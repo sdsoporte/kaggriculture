@@ -36,6 +36,7 @@ from kaggle_environments.envs.kaggriculture.kaggriculture import (
     ANIMALS,
     CROPS,
     FARM_HAND_COST_MULT,
+    FARMER_MOVES,
     LAND_PRICES,
     PRODUCTS,
 )
@@ -128,7 +129,13 @@ def validate_plan(plan):
         _check_int(entry["tiles"], f"crops[{crop}].tiles", 0, 100)
         _check_int(entry["fertilize_tiles"], f"crops[{crop}].fertilize_tiles", 0, entry["tiles"])
         days = entry["plant_days"]
-        _require(isinstance(days, list) and days, f"crops[{crop}].plant_days must be a non-empty list")
+        _require(isinstance(days, list), f"crops[{crop}].plant_days must be a list")
+        # An EMPTY list is legal only for a crop with no tiles: there is nothing to
+        # plant, so there is no planting day. A zero-tile crop is exactly how a plan
+        # says "never grow this", and an LLM plan supplied [] for TOMATO where
+        # revision 3's own example wrote ["4"] - both mean the same thing.
+        if entry["tiles"] > 0:
+            _require(days, f"crops[{crop}].plant_days must be non-empty when tiles > 0")
         for day in days:
             _check_int(day, f"crops[{crop}].plant_days[]", 0, SEASON_DAYS - 1)
         _require(days == sorted(days), f"crops[{crop}].plant_days must ascend")
@@ -268,6 +275,18 @@ def plan_market_orders(plan, ctx):
     money = ctx["money"] - cash_floor(
         plan, ctx["step"], ctx["unlocked_quadrants"], ctx["money"]
     )
+    # Hires are exempt from the floor, and that exemption is a MEASURED correction.
+    # With the floor applied to everything, an agent whose cash fell below it (day 4:
+    # $1,201 against a $2,100 floor) could not hire, could not buy seed, and could not
+    # earn its way back - it deadlocked with no income and its crops died. The floor
+    # protects the land purchase only while the purchase is still reachable; once cash
+    # is BELOW it the quadrant is already lost, and blocking labour deepens the loss.
+    hire_money = ctx["money"]
+    # At most half the spendable cash goes into seed, and only for a crop whose next
+    # planting is imminent. Without both gates the agent re-bought every crop up to
+    # the reserve EVERY turn and spent itself to zero on days it planted nothing -
+    # measured: money reached exactly 0 by day 9 with the farm still standing empty.
+    seed_budget = max(0, money) // 2
     orders = []
 
     paid = max(0, ctx["unlocked_quadrants"] - 1)
@@ -278,20 +297,20 @@ def plan_market_orders(plan, ctx):
         money -= LAND_PRICES[paid]
 
     for entry in plan["crops"]:
-        if entry["tiles"] <= 0:
+        if entry["tiles"] <= 0 or not _plant_soon(entry, ctx["day"]):
             continue
         crop = entry["crop"]
-        short = plan["market"]["seed_reserve"] - ctx["seeds"].get(crop, 0)
+        # Capped at the crop's own tile count, not the reserve: buying 24 seeds for a
+        # crop with 4 tiles is dead stock that cannot be planted.
+        short = min(plan["market"]["seed_reserve"] - ctx["seeds"].get(crop, 0),
+                    entry["tiles"])
         if short <= 0:
             continue
-        # ONE order per crop carrying the whole shortfall. Buying a seed per order
-        # burns the 10-order budget on the first crop of the list: the tape emits
-        # ["BUY_SEED", crop, n], and a test caught the per-unit version starving
-        # every crop after WHEAT.
         cost = CROPS[crop]["seed"] * short
-        if money < cost or len(orders) >= MAX_ORDERS - 3:
+        if cost > seed_budget or len(orders) >= MAX_ORDERS - 3:
             continue
         orders.append(["BUY_SEED", crop, short])
+        seed_budget -= cost
         money -= cost
 
     shed_room = ctx["shed_free"]
@@ -311,9 +330,10 @@ def plan_market_orders(plan, ctx):
     hires_today = ctx["hires_today"]
     for _ in range(min(missing, HIRES_PER_TURN)):
         cost = hand_cost(hires_today)
-        if money < cost or len(orders) >= MAX_ORDERS - 2:
+        if hire_money < cost or len(orders) >= MAX_ORDERS - 2:
             break
         orders.append(["HIRE"])
+        hire_money -= cost
         money -= cost
         hires_today += 1
 
@@ -327,6 +347,11 @@ def plan_market_orders(plan, ctx):
         orders.append(["SELL", item, chunk])
 
     return orders[:MAX_ORDERS]
+
+
+def _plant_soon(entry, day, horizon=2):
+    """Whether this crop has a planting day now or within the horizon."""
+    return any(day <= planting <= day + horizon for planting in entry["plant_days"])
 
 
 def farm_of(obs):
@@ -343,6 +368,235 @@ def held_of(obs):
         for item, count in (inventory or {}).items():
             held[item] = held.get(item, 0) + count
     return held
+
+
+def obs_tiles(obs):
+    """This seat's tile grid from an observation."""
+    return farm_of(obs).get("tiles") or []
+
+
+# --------------------------------------------------------------------------- #
+# The worker job board. This is what makes the consumer able to plant.
+# --------------------------------------------------------------------------- #
+
+# Engine movement verbs are the inverse of what routing needs, so the table is
+# imported and inverted rather than retyped (kaggriculture.py:88-93).
+_STEP = {delta: verb for verb, delta in FARMER_MOVES.items()}
+
+
+def shed_access_tiles():
+    """The four inner-corner tiles around the shed (kaggriculture.py:132-135)."""
+    half = BOARD_SIZE // 2
+    return [(half - 1, half - 1), (half, half - 1), (half - 1, half), (half, half)]
+
+
+def structure_slots(plan):
+    """Tiles the plan needs for animal structures. Animals are IRREMOVABLE."""
+    return sum(entry["count"] for entry in plan["animals"])
+
+
+def assign_targets(plan, obs, board_size=BOARD_SIZE):
+    """Decide WHICH tiles the plan's counts refer to. Deterministic, row-major.
+
+    The plan says how many tiles and how many structures, never where. The choice
+    has to be stable across turns or a crop's designated tile would move under it,
+    so it is derived from the unlocked tile set in a fixed order: structures first
+    (they are irreversible), then each crop's block in the plan's own order.
+    Shed-access tiles are excluded because the shed is used through them.
+    """
+    shed = set(shed_access_tiles())
+    free = []
+    for y, row in enumerate(obs_tiles(obs)):
+        for x, cell in enumerate(row):
+            if cell == "LOCKED" or (x, y) in shed:
+                continue
+            free.append((x, y))
+    free.sort(key=lambda pos: (pos[1], pos[0]))
+
+    n_structures = min(structure_slots(plan), len(free))
+    structures = set(free[:n_structures])
+    rest = free[n_structures:]
+
+    crops = {}
+    cursor = 0
+    for entry in plan["crops"]:
+        count = entry["tiles"]
+        crops[entry["crop"]] = set(rest[cursor:cursor + count])
+        cursor += count
+    return structures, crops
+
+
+def step_toward(pos, target):
+    """The single movement verb that shortens the Manhattan distance, or None."""
+    if target[0] > pos[0]:
+        return _STEP[(1, 0)]
+    if target[0] < pos[0]:
+        return _STEP[(-1, 0)]
+    if target[1] > pos[1]:
+        return _STEP[(0, 1)]
+    if target[1] < pos[1]:
+        return _STEP[(0, -1)]
+    return None
+
+
+def build_jobs(plan, obs, day, targets, seeds):
+    """Every unit of work the current board implies, grouped by kind.
+
+    Invariant 2 lives in the PLANT group: a crop is only ever asked to plant as
+    many tiles as there are seeds, because the engine voids EVERY PLANT of a crop
+    whose turn demand exceeds its stock (`kaggriculture.py:919-931`).
+    """
+    _, crops = targets
+    tiles = obs_tiles(obs)
+    jobs = {"feed": [], "water": [], "harvest": [], "plant": [],
+            "collect": [], "build": [], "dig": []}
+
+    for y, row in enumerate(tiles):
+        for x, cell in enumerate(row):
+            pos = (x, y)
+            if not isinstance(cell, dict):
+                continue
+            if cell.get("animal"):
+                # Feeding first: two consecutive unfed days and the animal escapes.
+                if not cell.get("fed_today", False):
+                    jobs["feed"].append(pos)
+                if cell.get("yield_units", 0) > 0:
+                    jobs["harvest"].append(pos)
+                jobs["collect"].append(pos)
+            elif cell.get("kind") == "PLANT":
+                if harvest_ready(cell, day):
+                    jobs["harvest"].append(pos)
+                else:
+                    age = day - cell.get("planted_day", day)
+                    if (not cell.get("watered_today", False)
+                            and water_window_ok(cell.get("crop"), age)):
+                        jobs["water"].append(pos)
+            elif cell.get("kind") == "WEED":
+                jobs["dig"].append(pos)
+
+    budget = {entry["crop"]: entry["plant_days"] for entry in plan["crops"]}
+    available = dict(seeds)
+    for crop, spots in sorted(crops.items()):
+        if day not in budget[crop]:
+            continue
+        for pos in sorted(spots, key=lambda p: (p[1], p[0])):
+            if available.get(crop, 0) <= 0:
+                break
+            if tiles[pos[1]][pos[0]] is None:
+                jobs["plant"].append((pos, crop))
+                available[crop] -= 1
+
+    for kind in jobs:
+        jobs[kind].sort()
+    return jobs
+
+
+def worker_actions(plan, obs, day, targets, jobs):
+    """One action per farm unit, farmer first. Never two units on one target.
+
+    The feeding chain is the reason this is not a plain nearest-job loop: `FEED`
+    consumes an item the WORKER carries (`_inv_take`), so a worker without wheat
+    has to make a pickup trip to the shed first, and a board without that step
+    silently feeds nothing.
+    """
+    farm = farm_of(obs)
+    private = obs.get("private") or {}
+    inventories = private.get("inventories") or []
+    shed = private.get("shed") or {}
+    positions = [farm.get("farmer")] + list(farm.get("hands") or [])
+    positions = [tuple(p) if isinstance(p, (list, tuple)) else (0, 0) for p in positions]
+
+    claimed = set()
+    order = GENERIC_JOB_ORDER
+    actions = []
+    for index, pos in enumerate(positions):
+        inventory = inventories[index] if index < len(inventories) else {}
+        carrying_wheat = (inventory or {}).get("WHEAT", 0) > 0
+        available_feed = [p for p in jobs["feed"] if p not in claimed]
+
+        if available_feed and carrying_wheat and day >= 4:
+            target = min(available_feed, key=lambda p: (_dist(pos, p), p))
+            action = ["FEED"]
+        elif available_feed and not carrying_wheat and shed.get("WHEAT", 0) > 0:
+            sheds = [p for p in shed_access_tiles() if p not in claimed]
+            if sheds:
+                target = min(sheds, key=lambda p: (_dist(pos, p), p))
+                action = ["PICKUP", "WHEAT"]
+            else:
+                target, action = _generic(pos, jobs, claimed, order)
+        else:
+            target, action = _generic(pos, jobs, claimed, order)
+
+        if target is None:
+            actions.append(["PASS"])
+            continue
+        claimed.add(target)
+        actions.append(_act(pos, target, action))
+    return actions[0], actions[1:]
+
+
+def _dist(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def _generic(pos, jobs, claimed, order):
+    """Nearest unclaimed job of the highest-priority non-empty kind.
+
+    Feeding is NOT in `order`: it needs the carry chain, so a worker without wheat
+    is sent to the shed instead of being told to feed.
+    """
+    for kind in order:
+        for entry in sorted(jobs[kind], key=lambda e: (_dist(pos, _entry_pos(e)), _entry_pos(e))):
+            tile = _entry_pos(entry)
+            if tile in claimed:
+                continue
+            return tile, _action_for(kind, entry)
+    return None, None
+
+
+def _action_for(kind, entry):
+    """The engine action for a job, payload included.
+
+    PLANT and PICKUP are not actions on their own verb: the engine reads `action[1]`
+    as the crop (`kaggriculture.py:418-420`) or the item (`:361-362`) and returns
+    early without it. A verb alone is a silent no-op. THIS is how the consumer
+    shipped a `["PLANT"]` that planted nothing for a whole season - the same
+    payload-less form that shipped twice before as `["COOP"]` and `["TOMATO"]`.
+    """
+    if kind == "plant":
+        return ["PLANT", entry[1]]
+    return list(_ACTION[kind])
+
+
+def _entry_pos(entry):
+    """A job entry is a tile, or a (tile, crop) pair for planting."""
+    return entry[0] if isinstance(entry, tuple) and len(entry) == 2 and isinstance(entry[1], str) else entry
+
+
+def _act(pos, target, action):
+    """Move one step toward the target, or perform the action while standing on it."""
+    if pos != target:
+        return [step_toward(pos, target) or "PASS"]
+    return list(action)
+
+
+# Every kind of job a generic worker can be sent to do MUST have an action here.
+# A missing key is not a silent no-op: `_ACTION[kind]` raises inside the agent on
+# the first turn that job exists, the engine isolates the failure, and the agent is
+# inert for the rest of the season.
+_ACTION = {
+    "water": ["WATER"],
+    "harvest": ["HARVEST"],
+    "plant": ["PLANT"],
+    "collect": ["COLLECT_FERTILIZER"],
+    "dig": ["DIG"],
+    "feed": ["FEED"],
+    "pickup": ["PICKUP", "WHEAT"],
+}
+
+# The priority order for a generic worker. Feeding is absent on purpose: it needs
+# the carry chain (pick wheat up), so it is handled before the board is consulted.
+GENERIC_JOB_ORDER = ("water", "harvest", "plant", "collect", "dig")
 
 
 # --------------------------------------------------------------------------- #
@@ -370,12 +624,13 @@ class Agent:
         step = current_step(obs)
         if step == 0:
             self._reset()
+        day = step // TURNS_PER_DAY
         farm = farm_of(obs)
         private = obs.get("private") or {}
         held = held_of(obs)
         ctx = {
             "step": step,
-            "day": step // TURNS_PER_DAY,
+            "day": day,
             "money": farm.get("money", 0),
             "hands_now": len(farm.get("hands") or []),
             "hires_today": farm.get("hires_today", 0),
@@ -389,7 +644,13 @@ class Agent:
         for order in orders:
             if order[0] == "BUY_ANIMAL":
                 self._bought[order[1]] = self._bought.get(order[1], 0) + 1
-        return {"farmer": ["PASS"], "hands": [], "market": orders}
+
+        targets = assign_targets(self.plan, obs)
+        jobs = build_jobs(self.plan, obs, day, targets, ctx["seeds"])
+        farmer, hands = worker_actions(self.plan, obs, day, targets, jobs)
+        n_hands = ctx["hands_now"]
+        hands = (hands + [["PASS"]] * n_hands)[:n_hands]
+        return {"farmer": farmer, "hands": hands, "market": orders}
 
 
 def make_agent(plan):
