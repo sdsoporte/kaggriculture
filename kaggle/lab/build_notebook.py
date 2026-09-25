@@ -23,11 +23,18 @@ Usage:
 """
 
 import ast
+import importlib.util
 import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "kaggriculture-lab.ipynb"
+#: Single source of truth for the daily/event-time extractor and the one-day guard.
+ECON_PATH = HERE.parent.parent / "scripts" / "corpus_economic_day.py"
+METADATA_PATH = HERE / "kernel-metadata.json"
+
+#: Lazily loaded extractor module, cached for the process.
+_ECON_MODULE = None
 
 
 def md(text):
@@ -37,6 +44,56 @@ def md(text):
 def code(text):
     return {"cell_type": "code", "execution_count": None, "metadata": {},
             "outputs": [], "source": text.splitlines(keepends=True)}
+
+
+def _econ_module():
+    """Load scripts/corpus_economic_day.py once, so the builder and the notebook
+    agree on the guard pattern and the CLI marker."""
+    global _ECON_MODULE
+    if _ECON_MODULE is None:
+        spec = importlib.util.spec_from_file_location("corpus_economic_day", ECON_PATH)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"cannot load extractor source {ECON_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _ECON_MODULE = module
+    return _ECON_MODULE
+
+
+def econ_source():
+    """The embeddable part of the extractor: library code, never the CLI.
+
+    A notebook cell runs with ``__name__ == "__main__"``, so embedding the file
+    whole would execute its CLI. The cut at CLI_MARKER keeps one source and
+    removes the entry point deterministically.
+    """
+    text = ECON_PATH.read_text()
+    # The module defines CLI_MARKER with the same text, so anchor the search to a
+    # standalone comment line (a newline immediately before the marker), not the
+    # assignment that merely contains it.
+    cut = text.find("\n" + _econ_module().CLI_MARKER)
+    if cut < 0:
+        raise SystemExit(f"{ECON_PATH} lost its CLI marker; refusing to embed")
+    return text[:cut].rstrip() + "\n"
+
+
+def daily_sources_in_metadata(metadata):
+    """Map date -> sources for the daily episode datasets in a kernel-metadata dict."""
+    return _econ_module().daily_dataset_dates(metadata.get("dataset_sources") or [])
+
+
+def assert_one_daily_source(metadata):
+    """Build-time twin of the runtime guard: exactly one daily source, fail closed.
+
+    Counts RAW matching sources, so a duplicated same-date entry in
+    ``dataset_sources`` is rejected instead of silently collapsing to one date.
+    """
+    sources = _econ_module().daily_dataset_sources(metadata.get("dataset_sources") or [])
+    if len(sources) != 1:
+        raise SystemExit(
+            "kernel-metadata.json must attach exactly one daily episode dataset; "
+            f"found {sources or 'none'}")
+    return _econ_module().daily_dataset_date(sources[0])
 
 
 INTRO = """# Kaggriculture Lab - corpus ingestion at scale
@@ -145,6 +202,34 @@ if by_day:
         print(f"{day:<42}{len(scores):>6}{scores[0]:>7.0f}"
               f"{scores[len(scores) // 2]:>8.0f}{scores[-1]:>7.0f}")"""
 
+ONE_DAY_GUARD = """# --- ONE-DAY GUARD: fail closed BEFORE any replay is parsed ---
+# The economic study analyses exactly one daily episode dataset per run. The
+# metadata attaches one, but a stale or mis-edited dataset_sources list could
+# mount several days, so the guard re-checks the mounted tree itself. The index
+# dataset, engine tables and reference agents are not daily sources and are
+# ignored on purpose.
+candidate_dirs = set()
+for _manifest in manifests:
+    candidate_dirs.add(os.path.dirname(_manifest))
+for _path in glob.glob("/kaggle/input/**/kaggriculture-episodes-*", recursive=True):
+    candidate_dirs.add(_path)
+try:
+    DATA_DATE, DATA_DIR = require_exactly_one_day(sorted(candidate_dirs))
+except OneDayGuardError as exc:
+    raise SystemExit("FATAL one-day guard: " + str(exc))
+print(f"one-day guard OK: dataset_date={DATA_DATE}")
+print(f"  daily source : {DATA_DIR}")
+print(f"  dirs scanned : {len(candidate_dirs)} (non-daily sources ignored)")
+"""
+
+ECON_REPORT = """# --- DAILY ECONOMIC EVENT-TIME REPORT (bounded) ---
+# Reads the accumulator filled inside the single Tier-2 full-parse pass, so no
+# replay is opened twice. Tier-2 skips are added here because a replay that the
+# tier-2 profiler could not read was never offered to the economic extractor.
+econ_summary["skipped"].update(t2_skipped)
+print(render_report(econ_summary, DATA_DATE))
+"""
+
 TIER1 = """import multiprocessing as mp
 
 MAX_EPISODES = 6000   # keep a session comfortable; raise it once the cost is known
@@ -214,10 +299,10 @@ for team, count in team_games.most_common(15):
     print(f"{team[:30]:<30}{count:>7}{team_day_count[team]:>6}"
           f"{(sum(scores) / len(scores) if scores else 0):>12.0f}")
 
-submissions = {"56513137": 1238.2, "56501811": 1194.0}
-print(f"\\nour active submissions: {submissions}")
-print("=> the corpus band is ~3000: comparing our games against it compares "
-      "populations, not strategies. Only within-game comparisons are safe.")"""
+print("\\nThe corpus is published as daily TOP episodes, a far higher rating")
+print("band than our current submissions whatever their scores. Comparing our games")
+print("against that band compares populations, not strategies; only within-game")
+print("comparisons of the two seats of one match are safe.")"""
 
 TIER2 = """import resource
 import statistics
@@ -460,6 +545,12 @@ for path in episode_files:
     if t2_day(path) != "?":
         by_day[t2_day(path)].append(path)
 t2_days = sorted(by_day)
+# The full-parse pass must see exactly the day the runtime guard resolved; a
+# mismatch means the sample is not the one the report names, so it stops.
+try:
+    require_expected_day(t2_days, DATA_DATE)
+except OneDayGuardError as exc:
+    raise SystemExit("FATAL one-day guard: " + str(exc))
 
 # Round-robin across days, so a MAX_REPLAYS_T2 cut still covers every attached day
 # instead of exhausting one of them and calling the result representative.
@@ -474,6 +565,13 @@ while True:
             progressed = True
     if not progressed:
         break
+
+# One day mounted means every replay in it is the sample: silently slicing at the
+# cap would shrink the day while the report still named it.
+try:
+    require_within_cap(len(plan), MAX_REPLAYS_T2, DATA_DATE)
+except OneDayGuardError as exc:
+    raise SystemExit("FATAL one-day guard: " + str(exc))
 
 sample = plan[:MAX_REPLAYS_T2]
 t2_newest = t2_days[-1] if t2_days else "?"
@@ -493,6 +591,9 @@ t2_day_buckets = {day: t2_new_bucket() for day in t2_days}
 t2_skipped = collections.Counter()
 t2_processed = collections.Counter()
 t2_done = 0
+# Economic accumulator filled in the SAME pass: the replay is already parsed and
+# in memory, so the daily/event-time extraction costs no extra read.
+econ_summary = new_summary()
 started = time.time()
 
 for _cut, (_day, _path) in enumerate(sample, 1):
@@ -517,6 +618,12 @@ for _cut, (_day, _path) in enumerate(sample, 1):
         b = t2_profile_seat(steps, 1)
         for prof, seat in ((a, 0), (b, 1)):
             prof["days"], prof["gap_at_four"], _ = t2_unlock_days(steps, seat)
+        _teams = ((data.get("info") or {}).get("TeamNames")
+                  if isinstance(data, dict) else None)
+        _econ = extract_match(steps, teams=_teams)
+    except MatchSkip as exc:
+        t2_skipped["econ: " + str(exc)] += 1
+        _econ = None
     except (AttributeError, IndexError, KeyError, TypeError) as exc:
         t2_skipped["malformed replay (" + type(exc).__name__ + ")"] += 1
         del data, steps
@@ -525,6 +632,8 @@ for _cut, (_day, _path) in enumerate(sample, 1):
 
     t2_fold(t2_pool, a, b)
     t2_fold(t2_day_buckets[_day], a, b)
+    if _econ is not None:
+        fold_match(econ_summary, _econ)
     t2_processed[_day] += 1
     t2_done += 1
 
@@ -640,9 +749,9 @@ TIER2_REPORT = """def t2_report(bucket, title, full=True):
 
 
 # The local 608-episode measurement, taken from the 2026-09-23 dataset (our local
-# cache is exactly those files). The newest day was NOT part of it, so comparing
-# the newest day against these numbers is an OUT-OF-SAMPLE replication, not a
-# re-measurement of the same data.
+# cache is exactly those files). Which label applies depends on the MOUNTED day, not
+# on this constant: a different day is an out-of-sample replication, while the SAME
+# day is a same-sample calibration and cannot support any cross-day claim.
 LOCAL_0923 = {
     "day": "2026-09-23",
     "episodes": 608,
@@ -660,10 +769,18 @@ LOCAL_0923 = {
 }
 
 
-def t2_compare(bucket, local):
-    # CONFIRMS / SHRINKS / CONTRADICTS the local finding, printed next to the raw
-    # rates so the label can always be checked against the numbers.
-    print("--- vs the LOCAL " + local["day"] + " measurement (OUT-OF-SAMPLE) ---")
+def t2_is_same_sample(day):
+    # The baseline summarizes ONE published day. A run mounting that exact day is
+    # re-measuring the corpus LOCAL_0923 was computed from, so its deltas are
+    # calibration noise, not evidence about a different day.
+    return day == LOCAL_0923["day"]
+
+
+def t2_local_table(bucket, local, label):
+    # Numbers only, printed next to the local rates so the label can always be
+    # checked against the values. Returns the per-quadrant rates and deltas so the
+    # caller decides whether a verdict is even meaningful.
+    print("--- vs the LOCAL " + local["day"] + " measurement (" + label + ") ---")
     print(f"local: {local['episodes']:,} episodes / {local['seats']:,} seats"
           f"   |   this day: {bucket['games']:,} matches / {2 * bucket['games']:,} seats")
     print(f"{'quadrants':>10}{'local':>12}{'local rate':>12}{'this day':>12}"
@@ -708,6 +825,14 @@ def t2_compare(bucket, local):
               f" median {statistics.median(four_days):.0f}"
               f" (max {max(four_days):.0f}) | after day 15: {late}")
 
+    return here, deltas
+
+
+def t2_compare(bucket, local):
+    # Genuinely different day: a real out-of-sample replication, so the local
+    # numbers are an independent comparison and a CONFIRMS / SHRINKS / CONTRADICTS
+    # verdict is meaningful.
+    here, deltas = t2_local_table(bucket, local, "OUT-OF-SAMPLE")
     if here.get(4) is None or here.get(3) is None:
         verdict = "INDETERMINATE (a quadrant group is empty on this day)"
     elif here[4] <= here[3]:
@@ -719,6 +844,21 @@ def t2_compare(bucket, local):
     else:
         verdict = "SHRINKS (direction holds, effect smaller than local)"
     print("verdict, this day against the local " + local["day"] + " finding: " + verdict)
+    print()
+
+
+def t2_same_sample(bucket, local):
+    # The mounted day IS the corpus the local baseline was measured from. The
+    # numbers are a calibration check that this report reproduces the local script;
+    # there is deliberately NO verdict, because a day compared against itself
+    # confirms and contradicts nothing and implies no cross-day robustness.
+    t2_local_table(bucket, local, "SAME-SAMPLE calibration, not a replication")
+    print("same-sample calibration: the mounted day is the same corpus the local "
+          + local["day"] + " baseline was measured from, so the deltas above only")
+    print("check that this report reproduces the local numbers. They are NOT")
+    print("independent evidence: a day compared against itself yields no replication")
+    print("verdict, and cross-day robustness cannot be inferred from the one day")
+    print("mounted here.")
     print()
 
 
@@ -743,17 +883,41 @@ def t2_per_day(day_buckets):
     print("09-18 down to 2,983 on 09-24). A rate that holds across every day is a")
     print("robustness statement; a rate that tracks the day's field is a warning that")
     print("the sample is selected.")
+    if len(day_buckets) < 2:
+        print("Only one day is mounted: cross-day stability cannot be inferred from")
+        print("one mounted day, so the row above is a single-day rate, not a")
+        print("robustness statement.")
     print()
 
 
-# Order matters: the newest day leads, alone, because it was never part of the local
-# measurement and is therefore the only out-of-sample replication we have.
-t2_report(t2_day_buckets[t2_newest],
-          "TIER 2.1 - DAY " + t2_newest + " ALONE (out-of-sample replication)")
-t2_compare(t2_day_buckets[t2_newest], LOCAL_0923)
-t2_report(t2_pool,
-          "TIER 2.2 - POOL " + t2_days[0] + " .. " + t2_days[-1]
-          + " (INCLUDES the day the local finding came from)")
+# Order matters: the newest day leads, alone. Which comparison applies is decided
+# by the DAY, not by the code path, so a run can never present the local baseline's
+# own day as if it were independent evidence.
+if t2_is_same_sample(t2_newest):
+    t2_report(t2_day_buckets[t2_newest],
+              "TIER 2.1 - DAY " + t2_newest
+              + " ALONE (same-sample calibration, NOT out-of-sample)")
+    t2_same_sample(t2_day_buckets[t2_newest], LOCAL_0923)
+else:
+    t2_report(t2_day_buckets[t2_newest],
+              "TIER 2.1 - DAY " + t2_newest + " ALONE (out-of-sample replication)")
+    t2_compare(t2_day_buckets[t2_newest], LOCAL_0923)
+
+# A pool of one day is that same day counted a second time, so it is skipped
+# instead of published as if a wider sample had been measured.
+if len(t2_days) > 1:
+    t2_report(t2_pool,
+              "TIER 2.2 - POOL " + t2_days[0] + " .. " + t2_days[-1]
+              + " (INCLUDES the day the local finding came from)")
+else:
+    print("=" * 84)
+    print("TIER 2.2 - POOL " + t2_days[0] + " .. " + t2_days[-1]
+          + " (SKIPPED: same single day as TIER 2.1)")
+    print("=" * 84)
+    print("Only one day is mounted, so the pool would repeat that same day. No")
+    print("pooled cross-day number is printed, and the per-day table below cannot")
+    print("show cross-day stability.")
+    print()
 t2_per_day(t2_day_buckets)
 """
 
@@ -921,15 +1085,19 @@ NEXT = """## Next steps
    projects the whole league), and attach more daily datasets to widen the window.
 2. Tier 2 now runs the within-game behaviour analysis (quadrant dose-response,
    unlock timing, separators, margins) over every mounted day, leading with the
-   newest day as an out-of-sample replication. Raise `MAX_REPLAYS_T2` to widen the
-   sample, and keep it above the mounted replay count so the bound never bites by
-   accident.
+   newest day: same-sample calibration when it is the local baseline's own date,
+   out-of-sample replication otherwise. Raise `MAX_REPLAYS_T2` to widen the sample,
+   and keep it above the mounted replay count so the bound never bites by accident.
 3. Upload our own replay caches as a private dataset so our games live here too.
 4. The GPU's only honest use here is a market surrogate trained on trajectories;
    everything above is CPU work."""
 
 
-CELLS = [
+def build_cells():
+    # The extractor is embedded from its own file, so the notebook and the tests
+    # share one implementation. It must be defined before Tier 2 calls it.
+    econ_cell = code(econ_source())
+    return [
     md(INTRO),
     code(RESOURCES),
     md("""## Tier 0 - the manifests (kilobytes, whole league)
@@ -939,6 +1107,22 @@ Each daily dataset ships `manifest.csv` with per-episode metadata
 size_bytes`), and the index dataset lists the daily datasets. This answers the
 population questions before touching a replay."""),
     code(TIER0),
+    md("""## The daily/event-time extractor (single source, embedded)
+
+This cell is `scripts/corpus_economic_day.py` verbatim (minus its CLI), so the
+extractor the notebook runs is the one the workstation tests exercise. It pins
+the replay action offset (`action[i]` produced `observation[i]`), takes the
+declared treatment as the OBSERVED 3-to-4 `unlocked_quadrants` transition, and
+refuses to report requested `SELL` units as executed sales."""),
+    econ_cell,
+    md("""## One-day guard - fail closed before any replay is parsed
+
+The economic study runs on exactly one daily episode dataset. The metadata
+attaches one, but this cell re-checks the mounted tree, because a dataset list is
+easy to edit and a pooled run is not an event study. Zero or more than one daily
+source stops the notebook with `SystemExit`; index, engine and reference-agent
+datasets are not daily sources and are ignored."""),
+    code(ONE_DAY_GUARD),
     md("""## Tier 1 - a prefix scan of every replay (~300 MB, not 1.19 TB)
 
 `info.TeamNames` and `seed` sit at one end or the other of the JSON, so reading
@@ -970,23 +1154,47 @@ projection for the whole corpus, so a truncated sample can never pass for a clea
 result. `MAX_REPLAYS_T2` bounds the work, so a slow run still prints a report
 instead of timing out.
 
-**The report leads with the NEWEST day, alone.** Our local 608-episode result came
-from the 2026-09-23 dataset, so the newest day is an out-of-sample replication: it
-was never seen locally, and pooling it would destroy that property by mixing the
-already-used day into the total. The pool follows, clearly labelled as including
-that day, and a per-day table checks whether the effect is stable across days or
-only tracks the field's strength."""),
+**The report leads with the NEWEST mounted day, alone.** The local 608-episode
+baseline came from ONE published day, recorded in the report's own constant. If the
+mounted day is a different date, the report treats it as an out-of-sample
+replication and prints a CONFIRMS / SHRINKS / CONTRADICTS verdict. If the mounted day
+IS that baseline's date, it says so explicitly, labels the comparison same-sample
+calibration and prints no verdict, because a day measured against itself is not
+independent evidence and implies no cross-day robustness. A single mounted day skips
+the pool entirely instead of double-counting that one day, and a per-day table
+checks stability across days only when more than one is attached.
+
+**One parse feeds two reports.** The same loop that already holds each parsed
+replay also feeds the daily/event-time extractor, so the economic study does not
+pay a second ~590-replay read."""),
     code(TIER2),
     md("""### The report
 
-Newest day first - its quadrant dose-response against the local measurement, with
-an explicit CONFIRMS / SHRINKS / CONTRADICTS verdict - then the pool of all attached
-days, then a per-day table. Within each block: the dose-response (wins and win rate
+Newest day first - its quadrant dose-response against the local measurement, either
+as a same-sample calibration with no verdict (when the mounted day IS the local
+baseline's own date) or as an out-of-sample replication with an explicit CONFIRMS /
+SHRINKS / CONTRADICTS verdict (when it is a different day). Then the pool of all
+attached days, skipped when only one day is mounted, then a per-day table that
+states when cross-day stability cannot be inferred. Within each block: the
+dose-response (wins and win rate
 for seats ending with 2, 3 and 4 quadrants, and the share when the two seats
 differ), the day each quadrant unlocked and the bank gap at the moment the 4th was
 bought (that timing is what separates a cause from a symptom), the behaviour
 separators with the winner-has-more share, and the margin distribution."""),
     code(TIER2_REPORT),
+    md("""### The one-day economic event study
+
+Primary cohort only: exactly one seat ends at four observed quadrants and its
+opponent at three, both profiled inside the SAME replay. The tables report cash
+(`farm.money`, never revenue), its daily change, the buyer-minus-opponent gap and
+observable resources per in-game day and per event offset relative to the buyer's
+observed unlock (-4..+8). The purchase day is labelled as containing the
+mechanical -$4,000 land cost. Every row prints its own denominator; the skipped
+counts and class mix are printed above the tables so a reduced sample cannot pass
+for a complete one. This is descriptive: the within-game control removes shared
+shops and market, not policy, skill or selection, and repeated teams make rows
+non-independent."""),
+    code(ECON_REPORT),
     md("""## The published market curve - where marginal value lives
 
 Price is a deterministic function of inventory, and the curve is brutally steep
@@ -1008,14 +1216,22 @@ product per 24 turns - flat - not the x2/x4 schedule the stale CSV claims."""),
     md("""## The measured reference league (a diverse opponent ladder)"""),
     code(REFERENCE),
     md(NEXT),
-]
+    ]
 
 
 def main():
+    # Build-time twin of the runtime guard: the metadata that will be pushed must
+    # attach exactly one daily episode dataset, or the run is not an event study.
+    try:
+        metadata = json.loads(METADATA_PATH.read_text())
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"cannot read {METADATA_PATH}: {exc}") from exc
+    date = assert_one_daily_source(metadata)
+    cells = build_cells()
     # Compile every code cell before writing, so a broken cell fails HERE instead
     # of inside a Kaggle run. A stray escape once produced an unterminated string
     # literal that only surfaced as a PapermillExecutionError after a full push.
-    for index, cell in enumerate(CELLS):
+    for index, cell in enumerate(cells):
         if cell["cell_type"] != "code":
             continue
         source = "".join(cell["source"])
@@ -1027,7 +1243,7 @@ def main():
             raise SystemExit(f"cell {index} does not compile: {exc}") from exc
         cell["id"] = f"cell-{index}"  # nbformat 5 wants ids; missing ones warn now, error later
     notebook = {
-        "cells": CELLS,
+        "cells": cells,
         "metadata": {
             "kernelspec": {"display_name": "Python 3", "language": "python",
                            "name": "python3"},
@@ -1037,7 +1253,7 @@ def main():
         "nbformat_minor": 5,
     }
     OUT.write_text(json.dumps(notebook, indent=1))
-    print(f"wrote {OUT} ({len(CELLS)} cells)")
+    print(f"wrote {OUT} ({len(cells)} cells); daily source {date}")
 
 
 if __name__ == "__main__":
