@@ -31,10 +31,13 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "kaggriculture-lab.ipynb"
 #: Single source of truth for the daily/event-time extractor and the one-day guard.
 ECON_PATH = HERE.parent.parent / "scripts" / "corpus_economic_day.py"
+#: Single source of truth for the shop-window demand extractor.
+SHOP_PATH = HERE.parent.parent / "scripts" / "corpus_shop_windows.py"
 METADATA_PATH = HERE / "kernel-metadata.json"
 
-#: Lazily loaded extractor module, cached for the process.
+#: Lazily loaded extractor modules, cached for the process.
 _ECON_MODULE = None
+_SHOP_MODULE = None
 
 
 def md(text):
@@ -75,6 +78,34 @@ def econ_source():
     if cut < 0:
         raise SystemExit(f"{ECON_PATH} lost its CLI marker; refusing to embed")
     return text[:cut].rstrip() + "\n"
+
+
+def shop_source():
+    """The embeddable part of the shop extractor: library code, never the CLI.
+
+    Same contract as :func:`econ_source`: the source is embedded verbatim and cut
+    at its own CLI marker, so the notebook and the tests share one implementation
+    and no cell ever runs a CLI.
+    """
+    text = SHOP_PATH.read_text()
+    cut = text.find("\n" + _shop_module().SHOP_CLI_MARKER)
+    if cut < 0:
+        raise SystemExit(f"{SHOP_PATH} lost its CLI marker; refusing to embed")
+    return text[:cut].rstrip() + "\n"
+
+
+def _shop_module():
+    """Load scripts/corpus_shop_windows.py once, so the builder and the notebook
+    agree on the guard pattern and the CLI marker."""
+    global _SHOP_MODULE
+    if _SHOP_MODULE is None:
+        spec = importlib.util.spec_from_file_location("corpus_shop_windows", SHOP_PATH)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"cannot load extractor source {SHOP_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SHOP_MODULE = module
+    return _SHOP_MODULE
 
 
 def daily_sources_in_metadata(metadata):
@@ -228,6 +259,20 @@ ECON_REPORT = """# --- DAILY ECONOMIC EVENT-TIME REPORT (bounded) ---
 # tier-2 profiler could not read was never offered to the economic extractor.
 econ_summary["skipped"].update(t2_skipped)
 print(render_report(econ_summary, DATA_DATE))
+"""
+
+SHOP_REPORT = """# --- SHOP-WINDOW DEMAND REPORT (bounded, same single pass) ---
+# shop_summary was filled by the SAME Tier-2 loop that filled econ_summary, so
+# this costs no second read of a replay. Tier-2 skips are copied in for the same
+# reason as the economic report, and the report itself prints nothing causal:
+# it labels itself descriptive, one dataset day, within-game only.
+#
+# shop_render_report, not render_report: both extractor cells share this one
+# kernel namespace, so the shop code carries its own prefix. Before that, this
+# cell called the SHOP renderer for the ECONOMIC summary and the kernel died on
+# KeyError 'demand_table'.
+shop_summary["skipped"].update(t2_skipped)
+print(shop_render_report(shop_summary, DATA_DATE))
 """
 
 TIER1 = """import multiprocessing as mp
@@ -594,6 +639,14 @@ t2_done = 0
 # Economic accumulator filled in the SAME pass: the replay is already parsed and
 # in memory, so the daily/event-time extraction costs no extra read.
 econ_summary = new_summary()
+# Shop-window accumulator in the SAME pass, with the mounted engine table loaded
+# once. A missing table degrades to the shop-product mapping, FLAGGED in the
+# report - never to a fabricated demand rate.
+shop_demand_path = (find_all("town_shop_demand.csv") or [None])[0]
+shop_table = shop_load_demand_table(shop_demand_path)
+shop_summary = shop_new_summary(shop_table)
+print(f"shop demand table : "
+      + (shop_demand_path or "MISSING - mapping-only fallback (FLAGGED)"))
 started = time.time()
 
 for _cut, (_day, _path) in enumerate(sample, 1):
@@ -613,6 +666,9 @@ for _cut, (_day, _path) in enumerate(sample, 1):
         t2_skipped["engine reported an ERROR status"] += 1
         del data, steps
         continue
+    _teams = None
+    _econ = None
+    _shop = None
     try:
         a = t2_profile_seat(steps, 0)
         b = t2_profile_seat(steps, 1)
@@ -623,17 +679,26 @@ for _cut, (_day, _path) in enumerate(sample, 1):
         _econ = extract_match(steps, teams=_teams)
     except MatchSkip as exc:
         t2_skipped["econ: " + str(exc)] += 1
-        _econ = None
     except (AttributeError, IndexError, KeyError, TypeError) as exc:
         t2_skipped["malformed replay (" + type(exc).__name__ + ")"] += 1
         del data, steps
         continue
+    # Shop-window extraction is independent of the econ cohort: EVERY match feeds
+    # it, because the comparison is winner against loser of the same replay.
+    try:
+        _shop = shop_extract_match(steps, teams=_teams)
+    except ShopSkip as exc:
+        t2_skipped["shop: " + str(exc)] += 1
+    except (AttributeError, IndexError, KeyError, TypeError) as exc:
+        t2_skipped["shop malformed replay (" + type(exc).__name__ + ")"] += 1
     del data, steps   # release the ~34 MB replay before opening the next one
 
     t2_fold(t2_pool, a, b)
     t2_fold(t2_day_buckets[_day], a, b)
     if _econ is not None:
         fold_match(econ_summary, _econ)
+    if _shop is not None:
+        shop_fold_match(shop_summary, _shop)
     t2_processed[_day] += 1
     t2_done += 1
 
@@ -1094,8 +1159,9 @@ NEXT = """## Next steps
 
 
 def build_cells():
-    # The extractor is embedded from its own file, so the notebook and the tests
-    # share one implementation. It must be defined before Tier 2 calls it.
+    # The extractors are embedded from their own files, so the notebook and the
+    # tests share one implementation. Both must be defined before Tier 2 calls
+    # them, and both feed the SAME Tier-2 full-parse pass.
     econ_cell = code(econ_source())
     return [
     md(INTRO),
@@ -1115,6 +1181,16 @@ the replay action offset (`action[i]` produced `observation[i]`), takes the
 declared treatment as the OBSERVED 3-to-4 `unlocked_quadrants` transition, and
 refuses to report requested `SELL` units as executed sales."""),
     econ_cell,
+    md("""## The shop-window demand extractor (single source, embedded)
+
+This cell is `scripts/corpus_shop_windows.py` verbatim (minus its CLI), so the
+shop analysis the notebook runs is the one the workstation tests exercise. It
+reads the per-turn `town.unlocked_shops` snapshots (duplicates are independent
+consumers), prices expected demand by joining the engine's shop-product mapping
+with the mounted `town_shop_demand.csv` (single-product shops consume double, the
+town centre is excluded), and measures EXECUTED units as holdings drops on a
+`SELL` turn - never as the requested quantity."""),
+    code(shop_source()),
     md("""## One-day guard - fail closed before any replay is parsed
 
 The economic study runs on exactly one daily episode dataset. The metadata
@@ -1195,6 +1271,17 @@ for a complete one. This is descriptive: the within-game control removes shared
 shops and market, not policy, skill or selection, and repeated teams make rows
 non-independent."""),
     code(ECON_REPORT),
+    md("""### The one-day shop-window demand study
+
+Filled by the SAME Tier-2 pass, so it costs no extra replay read. Per product and
+per seat: the observed shop timeline, expected shop demand from the mounted
+engine table, executed units from holdings drops, the shop-window share of those
+units, the within-game winner-versus-loser comparison (share and the shop vs
+non-shop unit split) and the tape's YARN gate (wool sold on `YARN_STORE` days vs
+not). Every row prints its `n`, every skip reason is listed, the demand table's
+absence is flagged as a mapping-only fallback, and the report states its own
+limits: descriptive, one dataset day, within-game only."""),
+    code(SHOP_REPORT),
     md("""## The published market curve - where marginal value lives
 
 Price is a deterministic function of inventory, and the curve is brutally steep

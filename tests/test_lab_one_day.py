@@ -264,3 +264,230 @@ def test_tier2_multi_day_run_still_prints_the_pool(tmp_path):
     assert "TIER 2.2 - POOL 2026-09-23 .. 2026-09-24" in out
     assert "SKIPPED" not in out
     assert "cross-day stability cannot be inferred" not in out
+
+
+# --- shop-window extractor embedding -----------------------------------------
+
+def _top_level_names(source):
+    """Names a cell defines or assigns at top level, as a set.
+
+    Import binds are excluded on purpose: both embedded sources import the same
+    stdlib modules, so an ``import`` name is the very same object in both cells
+    and cannot shadow a different implementation. ``from __future__ import
+    annotations`` cannot even be aliased. Every other top-level name is a
+    distinct binding, and those are the ones that can silently re-shadow.
+    """
+    names = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names.update(target.id for target in node.targets
+                         if isinstance(target, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+def test_embedded_extractors_share_no_top_level_name():
+    # Both cells execute in ONE notebook namespace, cell 7 (shop) after cell 5
+    # (econ). A shared name means the ECON_REPORT cell calls the SHOP renderer -
+    # that is the v11 crash (KeyError 'demand_table', econ_summary has no
+    # demand_table) - and shop's helpers silently replace the econ ones during
+    # the same Tier-2 fold. So the two embedded sources must define no name twice.
+    econ = _top_level_names(builder.econ_source())
+    shop = _top_level_names(builder.shop_source())
+    assert econ & shop == set(), f"shared top-level names: {sorted(econ & shop)}"
+
+
+def test_shop_source_excludes_the_cli_entry_point():
+    source = builder.shop_source()
+    assert "def shop_timeline" in source
+    assert "def shop_executed_sales" in source
+    assert "def shop_render_report" in source
+    assert "if __name__" not in source
+    assert "def main(" not in source
+
+
+def test_shop_cell_precedes_tier2_and_the_report_follows_econ():
+    # The shop extractor must be defined before Tier 2 calls it, and its report
+    # must be printed after the economic report, both from the SAME pass.
+    cells = builder.build_cells()
+    shop_def = next(index for index, cell in enumerate(cells)
+                    if "def shop_timeline" in "".join(cell["source"]))
+    tier2 = next(index for index, cell in enumerate(cells)
+                 if "shop_fold_match(shop_summary, _shop)" in "".join(cell["source"]))
+    econ_report = next(index for index, cell in enumerate(cells)
+                       if 'render_report(econ_summary, DATA_DATE)' in "".join(cell["source"]))
+    shop_report = next(index for index, cell in enumerate(cells)
+                       if 'shop_render_report(shop_summary, DATA_DATE)'
+                       in "".join(cell["source"]))
+    assert shop_def < tier2
+    assert econ_report < shop_report
+    # Only the shop study's markdown sits between the two reports: no other code.
+    between = [cell for cell in cells[econ_report + 1:shop_report]
+               if cell["cell_type"] == "code"]
+    assert between == []
+
+
+def test_tier2_cell_folds_both_extractors_in_one_pass():
+    # One read of a replay feeds the economic AND the shop report: the Tier-2 cell
+    # creates both accumulators and folds both inside the same loop.
+    assert "shop_new_summary(shop_table)" in builder.TIER2
+    assert "shop_extract_match(steps, teams=_teams)" in builder.TIER2
+    assert "shop_fold_match(shop_summary, _shop)" in builder.TIER2
+    assert "shop_load_demand_table(shop_demand_path)" in builder.TIER2
+    assert "shop_render_report(shop_summary, DATA_DATE)" in builder.SHOP_REPORT
+    assert "shop_summary[\"skipped\"].update(t2_skipped)" in builder.SHOP_REPORT
+
+
+# --- shared-kernel-namespace simulation (the v12 SHOP_REPORT crash) ----------
+# Every cell of this notebook runs in ONE kernel namespace, so a top-level name a
+# later cell binds is visible to the functions an earlier cell defined. The v12 run
+# died at the SHOP_REPORT cell with "TypeError: 'str' object is not callable"
+# because the Tier-2 loop header
+#     for _cut, (_day, _path) in enumerate(sample, 1)
+# left _day bound to the day STRING in that shared namespace, overwriting the shop
+# module's _day formatter, so shop_render_report eventually called a str. The
+# economic report printed fine. The AST guard above cannot see this: it compares
+# only the two embedded sources, never the names the other cells leave behind.
+#
+# This test closes that gap. It executes the two embedded cells in one namespace in
+# notebook order, binds every top-level name the OTHER cells bind (harvested from
+# their real sources, never hand-listed, so a new cell binding is covered
+# automatically) plus the real Tier-2 loop header, and only then calls BOTH
+# renderers. A shadowed helper surfaces as the crash it caused in production.
+
+
+def _top_level_bound_names(source):
+    """Top-level names a cell binds to a VALUE: the AST guard's set, plus loops.
+
+    Import binds are excluded for the same reason as in ``_top_level_names``: both
+    embedded sources import the same stdlib modules, so that name is the same
+    object in every cell and cannot shadow a different implementation. Loop,
+    ``with`` and augmented-assignment targets ARE included, because those are the
+    bindings that are easy to forget: the v12 crash was a loop target.
+    """
+    names = set()
+
+    def add_target(target):
+        if isinstance(target, ast.Name):
+            names.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                add_target(element)
+
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                add_target(target)
+        elif (isinstance(node, (ast.AnnAssign, ast.AugAssign))
+              and isinstance(node.target, ast.Name)):
+            names.add(node.target.id)
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            add_target(node.target)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    add_target(item.optional_vars)
+    return names
+
+
+def _synthetic_shop_summary():
+    """A minimal shop accumulator holding one BAKERY-seeded match, hand-built.
+
+    Hand-built on purpose: this test must run against both the shadowed and the
+    fixed cell, so it cannot depend on the accumulator factory's spelling. The
+    shape mirrors the keys the report reads; ``tests/test_corpus_shop_windows.py``
+    pins the factory that really produces it.
+    """
+    return {
+        "parsed": 1,
+        "matches": 1,
+        "seats": 2,
+        "ties": 0,
+        "skipped": collections.Counter(),
+        "demand_table": {"present": False, "path": None, "rates": {},
+                         "shop_rows": 0, "town_rows": 0, "mismatches": [],
+                         "missing": [], "unknown": []},
+        "matched_teams": {"A", "B"},
+        "final_instances": [1, 1],
+        "shop_instance_counts": collections.Counter({"BAKERY": 1}),
+        "shop_seats": collections.Counter({"BAKERY": 2}),
+        "shop_unlock_days": collections.defaultdict(list, {"BAKERY": [2, 2]}),
+        "duplicate_seats": 0,
+        "expected_product": {"WHEAT": [6.0, 1], "EGG": [6.0, 1]},
+        "sold_product": {"WHEAT": [10, 10]},
+        "window_product": {"WHEAT": {"sold": [10], "share": [0.6]}},
+        "shop_units": [10],
+        "non_shop_units": [0],
+        "window": {"both_defined": 1, "one_defined": 0, "none_defined": 0,
+                   "winner_more": 1, "loser_more": 0, "tie": 0,
+                   "winner_share": [0.6], "loser_share": [0.2],
+                   "winner_sold": [10], "loser_sold": [6]},
+        "split": {"winner_shop": [10], "loser_shop": [6], "winner_non": [0],
+                  "loser_non": [0], "winner_more_shop": 1, "loser_more_shop": 0,
+                  "tie_shop": 0, "winner_more_non": 0, "loser_more_non": 0,
+                  "tie_non": 1},
+        "yarn": {"seats_with_yarn": 1, "seats_without": 1, "on_units": 5,
+                 "off_units": 3, "on_vals": [5], "off_vals": [3]},
+    }
+
+
+def test_renderers_survive_the_shared_notebook_namespace():
+    cells = builder.build_cells()
+    econ_index = next(index for index, cell in enumerate(cells)
+                      if "".join(cell["source"]) == builder.econ_source())
+    shop_index = next(index for index, cell in enumerate(cells)
+                      if "".join(cell["source"]) == builder.shop_source())
+    assert econ_index < shop_index
+    # The real loop header this simulation reproduces. If Tier 2 stops using it,
+    # this test must be updated rather than silently weakened.
+    assert "for _cut, (_day, _path) in enumerate(sample, 1)" in builder.TIER2
+
+    namespace = {"__name__": "notebook-namespace-simulation"}
+    for index in (econ_index, shop_index):
+        exec(compile("".join(cells[index]["source"]), f"<cell {index}>", "exec"),
+             namespace)
+
+    shadows = set()
+    for index, cell in enumerate(cells):
+        if cell["cell_type"] != "code" or index in (econ_index, shop_index):
+            continue
+        shadows |= _top_level_bound_names("".join(cell["source"]))
+    assert shadows, "the other cells must bind something or this simulates nothing"
+
+    # Look the callables up BEFORE the shadow cell: a shadowed *name* must not stop
+    # the test from reaching the failure it is about. Shadowing still reaches the
+    # helpers they call, because a function's __globals__ IS the shared namespace.
+    render_econ = namespace["render_report"]
+    render_shop = namespace["shop_render_report"]
+    new_econ_summary = namespace["new_summary"]
+
+    shadow_source = "\n".join(f'{name} = "shadowed-by-another-cell"'
+                              for name in sorted(shadows))
+    shadow_source += ("\nfor _cut, (_day, _path) in enumerate([(\"2026-09-24\", \"p\")], 1):"
+                      "\n    pass\n")
+    exec(compile(shadow_source, "<synthetic tier-2 cell>", "exec"), namespace)
+
+    econ_report = render_econ(new_econ_summary(), "2026-09-24")
+    shop_report = render_shop(_synthetic_shop_summary(), "2026-09-24")
+    assert "DAILY ECONOMIC EVENT STUDY - dataset date 2026-09-24" in econ_report
+    assert "SHOP-WINDOW DEMAND ANALYSIS - dataset date 2026-09-24" in shop_report
+    assert "BAKERY" in shop_report and "WHEAT" in shop_report
+    assert len(econ_report.splitlines()) > 5
+    assert len(shop_report.splitlines()) > 5
+
+
+def test_shop_top_level_names_all_carry_the_shop_prefix():
+    # The shop cell shares ONE kernel namespace with every other cell, so every
+    # top-level name it defines must be unmistakably shop-owned. `_day`, `_share`,
+    # `holdings` or `final_money` are names any other cell can re-bind by accident,
+    # which is the whole failure class. ShopSkip is the single exception: it is the
+    # exception class the Tier-2 cell catches and is already Shop-prefixed.
+    offenders = sorted(
+        name for name in _top_level_names(builder.shop_source())
+        if name != "ShopSkip" and not name.startswith(("shop_", "SHOP_", "_shop_")))
+    assert offenders == [], f"shop cell defines un-namespaced top-level names: {offenders}"
