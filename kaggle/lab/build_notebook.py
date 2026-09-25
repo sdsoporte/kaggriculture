@@ -22,6 +22,7 @@ Usage:
     python kaggle/lab/build_notebook.py            # writes kaggriculture-lab.ipynb
 """
 
+import ast
 import json
 from pathlib import Path
 
@@ -218,6 +219,544 @@ print(f"\\nour active submissions: {submissions}")
 print("=> the corpus band is ~3000: comparing our games against it compares "
       "populations, not strategies. Only within-game comparisons are safe.")"""
 
+TIER2 = """import resource
+import statistics
+
+# Tier 2 - full-replay BEHAVIOUR analysis, always with the within-game control.
+#
+# This is the tier the notebook's own next-steps list was missing: income_breakdown
+# / sale_context / sell_timing ported so behaviour analyses run over a large sample,
+# always with both seats of the same match beside every cross-team number.
+#
+# Why the within-game control is NOT a stylistic preference: the corpus is published
+# as the day's TOP episodes, so it is selection-biased on the OUTCOME (no episode
+# here sits in our rating band). Comparing a top game with a random one is
+# confounded, and this project was already burned by exactly that (a +$25k
+# "opportunity" that turned out to be an artefact). Inside one match both seats face
+# the same shops, the same town drain and the same market, so winner-against-loser
+# WITHIN a match is the only safe axis. Every number below is computed that way.
+#
+# Memory and IO are the whole problem: one replay is ~34 MB, a day is ~21 GB and the
+# mounted corpus is ~190 GB. So ONE replay is opened, profiled and released before
+# the next is read, and only scalars survive the iteration - nothing here holds a
+# day, or a thousand parsed replays, in memory. It stays single process on purpose:
+# a 4-way pool would hold four replays and four parsed object graphs at once, and
+# the mounted read is the bottleneck anyway.
+
+TURNS_PER_DAY = 24
+
+# Taken verbatim from scripts/corpus_within_game.py, so the numbers stay comparable
+# with the local 608-episode result.
+T2_METRICS = (
+    "hires", "land", "seed_units", "animals_bought", "plants", "harvests",
+    "waters", "feeds", "fertilizes", "collects", "builds",
+    "sells", "sell_units", "sell_lot_median", "distinct_sell_days",
+    "peak_crop_tiles", "peak_animals", "quadrants",
+)
+
+MAX_REPLAYS_T2 = 6000   # a bound, so a run that is too slow still prints a report
+
+
+def t2_day(path):
+    match = re.search(r"kaggriculture-episodes-(\\d{4}-\\d{2}-\\d{2})", path)
+    if match:
+        return match.group(1)
+    # Never assume the layout: a dataset mounted under another name still has a
+    # parent directory, and a file whose day cannot be recovered is reported under
+    # that rather than silently dropped.
+    return os.path.basename(os.path.dirname(path)) or "?"
+
+
+def t2_verbs(action):
+    # Farm verbs this agent asks for in one turn. Copied from the local script.
+    if not isinstance(action, dict):
+        return []
+    units = [action.get("farmer"), *(action.get("hands") or [])]
+    return [unit[0] for unit in units if isinstance(unit, (list, tuple)) and unit]
+
+
+def t2_sum_orders(action, verb):
+    # Units this action asks for under verb, summed over its market orders.
+    total = 0
+    if isinstance(action, dict):
+        for order in action.get("market") or []:
+            if (isinstance(order, (list, tuple)) and len(order) >= 3
+                    and order[0] == verb):
+                try:
+                    total += int(order[2])
+                except (TypeError, ValueError):
+                    continue
+    return total
+
+
+def t2_profile_seat(steps, seat):
+    # Ported from scripts/corpus_within_game.py:profile_seat. Behaviour is identical,
+    # including the median sell lot over that seat's SELL orders and the peaks over
+    # the whole match; changing it would break comparability with the local result.
+    m = collections.Counter()
+    lots = []
+    sell_days = set()
+    peak_crops = peak_animals = peak_hands = 0
+    quadrants = 1
+    bank = 0.0
+
+    for index in range(1, len(steps)):
+        entry = steps[index][seat] if seat < len(steps[index]) else {}
+        obs = entry.get("observation") or {}
+        action = entry.get("action")
+        day = obs.get("day", index // TURNS_PER_DAY)
+
+        for verb in t2_verbs(action):
+            if verb == "PLANT":
+                m["plants"] += 1
+            elif verb == "HARVEST":
+                m["harvests"] += 1
+            elif verb == "WATER":
+                m["waters"] += 1
+            elif verb == "FEED":
+                m["feeds"] += 1
+            elif verb == "FERTILIZE":
+                m["fertilizes"] += 1
+            elif verb == "COLLECT_FERTILIZER":
+                m["collects"] += 1
+            elif verb in ("BUILD_COOP", "BUILD_PASTURE"):
+                m["builds"] += 1
+
+        if isinstance(action, dict):
+            for order in action.get("market") or []:
+                if not isinstance(order, (list, tuple)) or not order:
+                    continue
+                if order[0] == "HIRE":
+                    m["hires"] += 1
+                elif order[0] == "BUY_LAND":
+                    m["land"] += 1
+                elif order[0] == "BUY_ANIMAL":
+                    m["animals_bought"] += 1
+                elif order[0] == "SELL" and len(order) >= 3:
+                    m["sells"] += 1
+                    sell_days.add(day)
+                    try:
+                        quantity = int(order[2])
+                    except (TypeError, ValueError):
+                        continue
+                    lots.append(quantity)
+                    m["sell_units"] += quantity
+            m["seed_units"] += t2_sum_orders(action, "BUY_SEED")
+
+        crops = animals = 0
+        farm = (obs.get("farms") or [{}])[obs.get("player", seat)] or {}
+        for row in farm.get("tiles") or []:
+            for cell in row:
+                if not isinstance(cell, dict):
+                    continue
+                if cell.get("animal"):
+                    animals += 1
+                elif cell.get("kind") == "PLANT":
+                    crops += 1
+        peak_crops = max(peak_crops, crops)
+        peak_animals = max(peak_animals, animals)
+        peak_hands = max(peak_hands, len(farm.get("hands") or []))
+        quadrants = len(farm.get("unlocked_quadrants") or [])
+        bank = farm.get("money", bank)
+
+    return {
+        **m,
+        "sell_lot_median": statistics.median(lots) if lots else 0,
+        "distinct_sell_days": len(sell_days),
+        "peak_crop_tiles": peak_crops,
+        "peak_animals": peak_animals,
+        "peak_hands": peak_hands,
+        "quadrants": quadrants,
+        "bank": bank,
+    }
+
+
+def t2_unlock_days(steps, seat):
+    # Ported from scripts/corpus_quadrant_timing.py:unlock_days. farm[
+    # unlocked_quadrants] starts as ["NW"], so length 2 is the first paid quadrant
+    # (NE), 3 is the SW and 4 is the SE. Returns the day each unlocked and the bank
+    # gap between the buyer and the OPPONENT at the moment the 4th was bought.
+    days = {}
+    gap_at_four = None
+    bank = 0.0
+    for index in range(1, len(steps)):
+        entry = steps[index][seat] if seat < len(steps[index]) else {}
+        obs = entry.get("observation") or {}
+        farm = (obs.get("farms") or [{}])[obs.get("player", seat)] or {}
+        count = len(farm.get("unlocked_quadrants") or [])
+        day = obs.get("day", index // TURNS_PER_DAY)
+        bank = farm.get("money", bank)
+        if count >= 2 and 2 not in days:
+            days[2] = day
+        if count >= 3 and 3 not in days:
+            days[3] = day
+        if count >= 4 and 4 not in days:
+            days[4] = day
+            other = steps[index][1 - seat] if 1 - seat < len(steps[index]) else {}
+            oobs = other.get("observation") or {}
+            ofarm = (oobs.get("farms") or [{}])[oobs.get("player", 1 - seat)] or {}
+            gap_at_four = farm.get("money", 0) - ofarm.get("money", 0)
+    return days, gap_at_four, bank
+
+
+def t2_new_bucket():
+    # Only scalars and short lists; a bucket for 6,000 matches is a few MB at most.
+    return {
+        "games": 0,
+        "seat_quad": collections.defaultdict(lambda: [0, 0]),   # quadrants -> [wins, played]
+        "diff_n": 0, "diff_more": 0,
+        "unlock": collections.defaultdict(list),
+        "four_gap": [],
+        "winner_vals": collections.defaultdict(list),
+        "loser_vals": collections.defaultdict(list),
+        "winner_more": collections.Counter(),
+        "winner_less": collections.Counter(),
+        "margins": [], "relative": [],
+    }
+
+
+def t2_fold(bucket, a, b):
+    # One fold per MATCH: both seats are profiled, then winner against loser of that
+    # same game. No cross-game comparison enters this function.
+    bucket["games"] += 1
+    if a["bank"] >= b["bank"]:
+        winner, loser = a, b
+    else:
+        winner, loser = b, a
+
+    for prof, other in ((a, b), (b, a)):
+        bucket["seat_quad"][prof["quadrants"]][1] += 1
+        if prof["bank"] > other["bank"]:
+            bucket["seat_quad"][prof["quadrants"]][0] += 1
+        for quad, day in prof["days"].items():
+            bucket["unlock"][quad].append(day)
+        if 4 in prof["days"]:
+            bucket["four_gap"].append(prof["gap_at_four"])
+
+    if a["quadrants"] != b["quadrants"]:
+        bucket["diff_n"] += 1
+        more = a if a["quadrants"] > b["quadrants"] else b
+        other = b if more is a else a
+        if more["bank"] > other["bank"]:
+            bucket["diff_more"] += 1
+
+    for metric in T2_METRICS:
+        wv = winner.get(metric, 0) or 0
+        lv = loser.get(metric, 0) or 0
+        bucket["winner_vals"][metric].append(wv)
+        bucket["loser_vals"][metric].append(lv)
+        if wv > lv:
+            bucket["winner_more"][metric] += 1
+        elif wv < lv:
+            bucket["winner_less"][metric] += 1
+
+    gap = abs(a["bank"] - b["bank"])
+    bucket["margins"].append(gap)
+    bucket["relative"].append(gap / max(1.0, max(a["bank"], b["bank"])))
+
+
+by_day = collections.defaultdict(list)
+for path in episode_files:
+    if t2_day(path) != "?":
+        by_day[t2_day(path)].append(path)
+t2_days = sorted(by_day)
+
+# Round-robin across days, so a MAX_REPLAYS_T2 cut still covers every attached day
+# instead of exhausting one of them and calling the result representative.
+plan = []
+cursors = {day: 0 for day in t2_days}
+while True:
+    progressed = False
+    for day in t2_days:
+        if cursors[day] < len(by_day[day]):
+            plan.append((day, by_day[day][cursors[day]]))
+            cursors[day] += 1
+            progressed = True
+    if not progressed:
+        break
+
+sample = plan[:MAX_REPLAYS_T2]
+t2_newest = t2_days[-1] if t2_days else "?"
+league_total = (sum(int(row["episode_count"]) for row in index_rows)
+                if index_rows else 38454)
+print(f"tier-2 sample : {len(sample):,} replays "
+      f"(mounted {len(plan):,} across {len(t2_days)} days, cap {MAX_REPLAYS_T2:,})")
+print(f"tier-2 days   : {', '.join(t2_days)}")
+print(f"newest day    : {t2_newest}")
+
+
+# One bucket per day as well as the pool: the per-day table is what shows whether the
+# effect is stable or only tracks the field's strength on one day, and it costs a few
+# scalars per match.
+t2_pool = t2_new_bucket()
+t2_day_buckets = {day: t2_new_bucket() for day in t2_days}
+t2_skipped = collections.Counter()
+t2_processed = collections.Counter()
+t2_done = 0
+started = time.time()
+
+for _cut, (_day, _path) in enumerate(sample, 1):
+    try:
+        with open(_path) as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        t2_skipped["unreadable / not JSON (" + type(exc).__name__ + ")"] += 1
+        continue
+    steps = data.get("steps") if isinstance(data, dict) else data
+    if not steps or len(steps) < 100 or any(len(s) < 2 for s in steps[:2]):
+        t2_skipped["truncated: too few steps or seats"] += 1
+        del data, steps
+        continue
+    statuses = (data.get("statuses") or []) if isinstance(data, dict) else []
+    if any(str(s).upper().find("ERROR") >= 0 for s in statuses):
+        t2_skipped["engine reported an ERROR status"] += 1
+        del data, steps
+        continue
+    try:
+        a = t2_profile_seat(steps, 0)
+        b = t2_profile_seat(steps, 1)
+        for prof, seat in ((a, 0), (b, 1)):
+            prof["days"], prof["gap_at_four"], _ = t2_unlock_days(steps, seat)
+    except (AttributeError, IndexError, KeyError, TypeError) as exc:
+        t2_skipped["malformed replay (" + type(exc).__name__ + ")"] += 1
+        del data, steps
+        continue
+    del data, steps   # release the ~34 MB replay before opening the next one
+
+    t2_fold(t2_pool, a, b)
+    t2_fold(t2_day_buckets[_day], a, b)
+    t2_processed[_day] += 1
+    t2_done += 1
+
+    if t2_done % 500 == 0:
+        _elapsed = time.time() - started
+        _rate = t2_done / max(_elapsed, 1e-9)
+        print(f"  ... {t2_done:,} replays in {_elapsed:.0f}s ({_rate:.1f}/s), "
+              f"{sum(t2_skipped.values()):,} skipped | projection for {len(plan):,}"
+              f": {len(plan) / _rate / 60:.0f} min", flush=True)
+
+elapsed = time.time() - started
+rate = t2_done / max(elapsed, 1e-9)
+peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+print()
+print(f"TIER 2 done: {t2_done:,} replays in {elapsed:.0f}s ({rate:.2f}/s), "
+      f"peak RSS {peak_mb:.0f} MB")
+print(f"  skipped: {sum(t2_skipped.values()):,}")
+for reason, count in t2_skipped.most_common():
+    print(f"    {count:>6,}  {reason}")
+print(f"  processed per day: {dict(sorted(t2_processed.items()))}")
+print(f"  projection: mounted corpus {len(plan):,} -> {len(plan) / rate / 60:.0f} min"
+      f" | whole league {league_total:,} -> {league_total / rate / 3600:.1f} h"
+      f" at this rate")
+print(f"  bound MAX_REPLAYS_T2={MAX_REPLAYS_T2:,}: "
+      + ("all mounted replays taken" if len(sample) == len(plan)
+         else "sample CUT by the bound"))
+"""
+
+TIER2_REPORT = """def t2_report(bucket, title, full=True):
+    print("=" * 84)
+    print(title)
+    print("=" * 84)
+    games = bucket["games"]
+    if not games:
+        print("no usable matches in this bucket")
+        print()
+        return
+    print(f"matches (both seats of the same game): {games:,}   seats: {2 * games:,}")
+    print()
+
+    print("--- QUADRANT DOSE-RESPONSE (the headline) ---")
+    print(f"{'quadrants':>10}{'played':>10}{'wins':>8}{'win rate':>10}")
+    for quad in sorted(bucket["seat_quad"]):
+        wins, played = bucket["seat_quad"][quad]
+        print(f"{quad:>10}{played:>10,}{wins:>8,}{wins / played:>10.1%}")
+    if bucket["diff_n"]:
+        print(f"matches where the two seats DIFFER in quadrant count: "
+              f"{bucket['diff_n']:,}")
+        print(f"  the seat with MORE quadrants wins: {bucket['diff_more']:,}"
+              f"/{bucket['diff_n']:,} = {bucket['diff_more'] / bucket['diff_n']:.1%}")
+    print()
+
+    print("--- QUADRANT TIMING (does the purchase PRECEDE the win?) ---")
+    for quad, label in ((2, "2nd (NE)"), (3, "3rd (SW)")):
+        days = bucket["unlock"].get(quad) or []
+        if not days:
+            continue
+        print(f"  {label:<9} unlocked by {len(days):>5} seats | median day "
+              f"{statistics.median(days):>4.0f} (min {min(days):.0f}, max {max(days):.0f})")
+    four = bucket["unlock"].get(4) or []
+    if four:
+        print(f"  {'4th (SE)':<9} bought  by {len(four):>5} seats | median day "
+              f"{statistics.median(four):>4.0f} (min {min(four):.0f}, max {max(four):.0f})")
+        gaps = [gap for gap in bucket["four_gap"] if gap is not None]
+        if gaps:
+            ahead = sum(1 for gap in gaps if gap > 0)
+            level = sum(1 for gap in gaps if gap == 0)
+            print(f"    at the moment of the 4th purchase the buyer was AHEAD: "
+                  f"{ahead:,}/{len(gaps):,} = {ahead / len(gaps):.1%} (level: {level:,})")
+            print(f"    median bank gap at that moment: ${statistics.median(gaps):+,.0f}"
+                  f"   (+ = buyer ahead, - = buyer behind)")
+        late = sum(1 for day in four if day > 15)
+        print(f"    bought after day 15: {late:,}/{len(four):,} = {late / len(four):.0%}")
+    else:
+        print("  nobody bought the 4th quadrant in this bucket")
+    print()
+
+    if not full:
+        return
+
+    print("--- BEHAVIOUR SEPARATORS (winner vs loser WITHIN the same match) ---")
+    print(f"{'metric':<20}{'winner':>11}{'loser':>11}{'delta':>11}"
+          f"{'winner more':>13}{'wins/losses':>14}")
+    rows = []
+    for metric in T2_METRICS:
+        wvals = bucket["winner_vals"][metric]
+        lvals = bucket["loser_vals"][metric]
+        wv = statistics.median(wvals) if wvals else 0
+        lv = statistics.median(lvals) if lvals else 0
+        more = bucket["winner_more"][metric]
+        less = bucket["winner_less"][metric]
+        share = more / max(1, more + less)
+        rows.append((metric, wv, lv, wv - lv, share, more, less))
+    for metric, wv, lv, delta, share, more, less in sorted(
+            rows, key=lambda row: -abs(row[4] - 0.5)):
+        flag = "  <-- separates" if abs(share - 0.5) >= 0.15 else ""
+        print(f"{metric:<20}{wv:>11.1f}{lv:>11.1f}{delta:>+11.1f}"
+              f"{share:>13.1%}{more:>7}/{less:<7}{flag}")
+    print()
+    print("'winner more' = share of matches where the WINNER has more of that metric.")
+    print("50% = no separation. Only the direction counts: the final ranking is a")
+    print("win-rate tournament, not a margin race.")
+    print()
+
+    print("--- MARGINS ---")
+    print(f"absolute margin, median: ${statistics.median(bucket['margins']):,.0f}")
+    print(f"relative margin, median: {statistics.median(bucket['relative']):.2%}"
+          f" of the winner's bank")
+    close = sum(1 for rel in bucket["relative"] if rel < 0.05)
+    print(f"decided by under 5% of the winner's bank: {close:,}/{games:,}"
+          f" = {close / games:.0%}")
+    print()
+
+
+# The local 608-episode measurement, taken from the 2026-09-23 dataset (our local
+# cache is exactly those files). The newest day was NOT part of it, so comparing
+# the newest day against these numbers is an OUT-OF-SAMPLE replication, not a
+# re-measurement of the same data.
+LOCAL_0923 = {
+    "day": "2026-09-23",
+    "episodes": 608,
+    "seats": 1216,
+    "quad_wins": {2: 0, 3: 334, 4: 274},
+    "quad_played": {2: 12, 3: 756, 4: 448},
+    "differ_share": 0.672,
+    # Measured over the same 608 episodes (scripts/corpus_quadrant_timing.py). The
+    # 100-file preview read 16% ahead and a $-3,495 median gap; the full 608 read
+    # 21% and $-3,083, so the same-sample value is the one used as the baseline.
+    "ahead_at_four": 0.21,
+    "gap_at_four": -3083.0,
+    "day4_median": 10.0,
+    "day4_max": 13.0,
+}
+
+
+def t2_compare(bucket, local):
+    # CONFIRMS / SHRINKS / CONTRADICTS the local finding, printed next to the raw
+    # rates so the label can always be checked against the numbers.
+    print("--- vs the LOCAL " + local["day"] + " measurement (OUT-OF-SAMPLE) ---")
+    print(f"local: {local['episodes']:,} episodes / {local['seats']:,} seats"
+          f"   |   this day: {bucket['games']:,} matches / {2 * bucket['games']:,} seats")
+    print(f"{'quadrants':>10}{'local':>12}{'local rate':>12}{'this day':>12}"
+          f"{'here':>9}{'delta':>9}")
+    here = {}
+    deltas = {}
+    for quad in (2, 3, 4):
+        local_wins = local["quad_wins"].get(quad, 0)
+        local_played = local["quad_played"].get(quad, 0)
+        local_rate = local_wins / local_played if local_played else 0.0
+        wins, played = bucket["seat_quad"].get(quad, [0, 0])
+        rate = wins / played if played else None
+        here[quad] = rate
+        deltas[quad] = None if rate is None else rate - local_rate
+        cell = f"{wins}/{played}" if played else "-"
+        shown = "n/a" if rate is None else f"{rate:>9.1%}"
+        delta = "n/a" if rate is None else f"{rate - local_rate:>+9.1%}"
+        print(f"{quad:>10}{local_wins:>5}/{local_played:<6}{local_rate:>12.1%}"
+              f"{cell:>12}{shown}{delta}")
+    here_differ = bucket["diff_more"] / bucket["diff_n"] if bucket["diff_n"] else None
+    shown = "n/a" if here_differ is None else f"{here_differ:>9.1%}"
+    delta = ("n/a" if here_differ is None
+             else f"{here_differ - local['differ_share']:>+9.1%}")
+    print(f"{'differ':>10}{'':>12}{local['differ_share']:>12.1%}"
+          f"{(str(bucket['diff_more']) + '/' + str(bucket['diff_n'])):>12}"
+          f"{shown}{delta}")
+
+    gaps = [gap for gap in bucket["four_gap"] if gap is not None]
+    if gaps:
+        ahead = sum(1 for gap in gaps if gap > 0) / len(gaps)
+        print(f"4th quadrant, buyer AHEAD at the moment of purchase: local "
+              f"{local['ahead_at_four']:.0%} | this day {ahead:.0%}"
+              f" ({ahead - local['ahead_at_four']:+.1%})")
+        print(f"4th quadrant, median bank gap at that purchase: local "
+              f"${local['gap_at_four']:,.0f} | this day "
+              f"${statistics.median(gaps):,.0f}")
+    four_days = bucket["unlock"].get(4) or []
+    if four_days:
+        late = sum(1 for day in four_days if day > 15)
+        print(f"4th quadrant unlock day: local median {local['day4_median']:.0f}"
+              f" (max {local['day4_max']:.0f}; every purchase by day 15) | this day"
+              f" median {statistics.median(four_days):.0f}"
+              f" (max {max(four_days):.0f}) | after day 15: {late}")
+
+    if here.get(4) is None or here.get(3) is None:
+        verdict = "INDETERMINATE (a quadrant group is empty on this day)"
+    elif here[4] <= here[3]:
+        verdict = "CONTRADICTS (the 4th quadrant no longer beats the 3rd here)"
+    elif any(delta is not None and delta > 0.05 for delta in deltas.values()):
+        verdict = "CONFIRMS / STRENGTHENS (direction holds, at least one rate higher)"
+    elif all(delta is not None and abs(delta) <= 0.05 for delta in deltas.values()):
+        verdict = "CONFIRMS (every quadrant rate within 5 points of the local one)"
+    else:
+        verdict = "SHRINKS (direction holds, effect smaller than local)"
+    print("verdict, this day against the local " + local["day"] + " finding: " + verdict)
+    print()
+
+
+def t2_per_day(day_buckets):
+    # Cheap by construction: the per-day buckets are a few scalars, not replays.
+    print("=" * 84)
+    print("TIER 2 - PER-DAY QUADRANT WIN RATES (stable across days, or tracking the field?)")
+    print("=" * 84)
+    print(f"{'day':<12}{'seats':>7}{'2q':>17}{'3q':>17}{'4q':>17}{'differ->more':>14}")
+    for day in sorted(day_buckets):
+        bucket = day_buckets[day]
+        row = f"{day:<12}{2 * bucket['games']:>7,}"
+        for quad in (2, 3, 4):
+            wins, played = bucket["seat_quad"].get(quad, [0, 0])
+            cell = f"{wins}/{played} = {wins / played:.0%}" if played else "-"
+            row += f"{cell:>17}"
+        differ = (f"{bucket['diff_more'] / bucket['diff_n']:.0%}"
+                  if bucket["diff_n"] else "-")
+        print(row + f"{differ:>14}")
+    print()
+    print("The index manifest shows the field drifting (median_avg_score 3,084 on")
+    print("09-18 down to 2,983 on 09-24). A rate that holds across every day is a")
+    print("robustness statement; a rate that tracks the day's field is a warning that")
+    print("the sample is selected.")
+    print()
+
+
+# Order matters: the newest day leads, alone, because it was never part of the local
+# measurement and is therefore the only out-of-sample replication we have.
+t2_report(t2_day_buckets[t2_newest],
+          "TIER 2.1 - DAY " + t2_newest + " ALONE (out-of-sample replication)")
+t2_compare(t2_day_buckets[t2_newest], LOCAL_0923)
+t2_report(t2_pool,
+          "TIER 2.2 - POOL " + t2_days[0] + " .. " + t2_days[-1]
+          + " (INCLUDES the day the local finding came from)")
+t2_per_day(t2_day_buckets)
+"""
+
 CURVE = """curve = {}
 curve_path = (find_all("price_curve.csv") or [None])[0]
 if curve_path:
@@ -380,9 +919,11 @@ NEXT = """## Next steps
 
 1. Raise `MAX_EPISODES` once the tier-1 cost is known (the cell prints the rate and
    projects the whole league), and attach more daily datasets to widen the window.
-2. Port `income_breakdown.py` / `sale_context.py` / `sell_timing.py` for tier 2, so
-   behaviour analyses run over a large sample - always with the within-game control
-   (both seats of the same match) beside every cross-team number.
+2. Tier 2 now runs the within-game behaviour analysis (quadrant dose-response,
+   unlock timing, separators, margins) over every mounted day, leading with the
+   newest day as an out-of-sample replication. Raise `MAX_REPLAYS_T2` to widen the
+   sample, and keep it above the mounted replay count so the bound never bites by
+   accident.
 3. Upload our own replay caches as a private dataset so our games live here too.
 4. The GPU's only honest use here is a market surrogate trained on trajectories;
    everything above is CPU work."""
@@ -405,6 +946,47 @@ population questions before touching a replay."""),
 many days: cost grows with file count, not with 35 MB per episode."""),
     code(TIER1),
     code(TIER1_INDEX),
+    md("""## Tier 2 - full-replay BEHAVIOUR, always with the within-game control
+
+The tier the notebook's own next-steps list was missing: `income_breakdown.py` /
+`sale_context.py` / `sell_timing.py` ported so behaviour analyses run over a large
+sample, always with both seats of the same match beside every cross-team number.
+
+**Why the within-game control is not a stylistic preference.** The corpus is
+published as the day's TOP episodes, so it is selection-biased on the OUTCOME: no
+episode here sits in our rating band. Comparing a top game with a random one is
+confounded, and this project was already burned by exactly that (a +$25k
+"opportunity" that turned out to be an artefact). Inside one match both seats face
+the same shops, the same town drain and the same market, so winner-against-loser
+within a match is the only safe axis. The analysis profiles BOTH seats of every
+replay and compares the winner with the loser of that same game - never one corpus
+band against another.
+
+**Cost, and how it stays inside memory.** One replay is ~34 MB, a day is ~21 GB and
+the mounted corpus is ~190 GB. Each replay is opened, profiled and released before
+the next one is read, and only scalars survive an iteration. The cell prints the
+measured rate, the number processed, the number skipped **with the reason**, and a
+projection for the whole corpus, so a truncated sample can never pass for a clean
+result. `MAX_REPLAYS_T2` bounds the work, so a slow run still prints a report
+instead of timing out.
+
+**The report leads with the NEWEST day, alone.** Our local 608-episode result came
+from the 2026-09-23 dataset, so the newest day is an out-of-sample replication: it
+was never seen locally, and pooling it would destroy that property by mixing the
+already-used day into the total. The pool follows, clearly labelled as including
+that day, and a per-day table checks whether the effect is stable across days or
+only tracks the field's strength."""),
+    code(TIER2),
+    md("""### The report
+
+Newest day first - its quadrant dose-response against the local measurement, with
+an explicit CONFIRMS / SHRINKS / CONTRADICTS verdict - then the pool of all attached
+days, then a per-day table. Within each block: the dose-response (wins and win rate
+for seats ending with 2, 3 and 4 quadrants, and the share when the two seats
+differ), the day each quadrant unlocked and the bank gap at the moment the 4th was
+bought (that timing is what separates a cause from a symptom), the behaviour
+separators with the winner-has-more share, and the margin distribution."""),
+    code(TIER2_REPORT),
     md("""## The published market curve - where marginal value lives
 
 Price is a deterministic function of inventory, and the curve is brutally steep
@@ -438,7 +1020,9 @@ def main():
             continue
         source = "".join(cell["source"])
         try:
-            compile(source, f"<cell {index}>", "exec")
+            # Parse, not compile: the same SyntaxError for the same broken cell,
+            # without asking the interpreter to build executable code from a string.
+            ast.parse(source, filename=f"<cell {index}>")
         except SyntaxError as exc:
             raise SystemExit(f"cell {index} does not compile: {exc}") from exc
         cell["id"] = f"cell-{index}"  # nbformat 5 wants ids; missing ones warn now, error later
