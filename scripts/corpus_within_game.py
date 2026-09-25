@@ -319,6 +319,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--files", type=int, default=100)
+    ap.add_argument("--dir", default=str(CACHE),
+                    help="directory of replays to analyse (default: the daily-dataset cache)")
     ap.add_argument("--recipe", action="store_true",
                     help="segment seats by quadrant count instead of comparing winner vs loser")
     ap.add_argument("--vs", type=int, default=0, metavar="N",
@@ -332,9 +334,9 @@ def main():
         report_versus(rows, failures)
         return
 
-    files = sorted(CACHE.glob("*.json"))[:args.files]
+    files = sorted(Path(args.dir).glob("*.json"))[:args.files]
     if not files:
-        raise SystemExit(f"no replays in {CACHE}")
+        raise SystemExit(f"no replays in {args.dir}")
 
     games, skipped = [], 0
     for path in files:
