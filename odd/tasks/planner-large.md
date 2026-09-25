@@ -1,5 +1,11 @@
 # C-Largo: the offline planner, authored by an LLM
 
+> **SUPERSEDED (2026-09-25) by `odd/tasks/policy-agent.md`.** The consumer
+> halves (W2b2 drain gate, W2c consistency, W2d search, W2e bake) moved into
+> the policy-agent feature after the three refutations (overlays, hybrid
+> ownership, shop null) showed the full roster must be owned, farmer included.
+> This doc stays as history; its evidence log remains valid.
+
 ## Goal
 
 The tape sits at a measured local optimum: nine levers closed, every one of them
