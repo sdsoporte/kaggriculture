@@ -515,8 +515,10 @@ def test_unfunded_overlay_never_buys_land_and_is_byte_identical_to_the_tape():
     assert _actions(run_bare) == _actions(run_unfunded)
     final = run_unfunded["steps"][-1][0]["observation"]["farms"][0]
     assert final["unlocked_quadrants"] == ["NW", "NE", "SW"]  # SE never bought
-    assert not any(isinstance(t, dict) for t in final["tiles"][5][5:10]
-                   for t in [])
+    # The unfunded pass-through must have placed no structure or animal anywhere:
+    # every remaining tile stays bare (no COOP/PASTURE/animal dict was ever ours).
+    bare_final = run_bare["steps"][-1][0]["observation"]["farms"][0]
+    assert final["tiles"] == bare_final["tiles"]
 
 
 def test_funded_season_lands_the_mechanism_without_placing_animal_structures():
