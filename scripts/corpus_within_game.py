@@ -291,6 +291,29 @@ def report_versus(rows, failures):
         if they > we:
             print(f"   {metric:<20} ellos {they:>9.1f} | nosotros {we:>9.1f} | +{they - we:.1f}")
 
+    if not lost:
+        return
+    # A loss is not a loss. A narrow one is a coin flip; a blowout means something
+    # broke, and a mechanism in a subset of games is worth far more than a profile
+    # difference. The markers below are the ones a structural failure would move.
+    margins_lost = sorted(mine["bank"] - theirs["bank"] for mine, theirs in lost)
+    blowouts = sum(1 for m in margins_lost if m < -20_000)
+    print()
+    print(f"=== LAS DERROTAS NO SON TODAS IGUALES ({len(lost)}) ===")
+    print(f"  peor ${margins_lost[0]:,.0f} | mediana ${statistics.median(margins_lost):,.0f}"
+          f" | mejor ${margins_lost[-1]:,.0f}")
+    print(f"  palizas de mas de $20k: {blowouts}/{len(lost)} = {blowouts / len(lost):.0%}"
+          f"  (falla estructural, no moneda al aire)")
+    print()
+    print("  LAS 5 PEORES, con marcadores estructurales (nosotros / ellos):")
+    for mine, theirs in sorted(lost, key=lambda pair: pair[0]["bank"] - pair[1]["bank"])[:5]:
+        print(f"    ${mine['bank']:>8,.0f} vs ${theirs['bank']:>8,.0f}"
+              f" | cuadrantes {mine['quadrants']}/{theirs['quadrants']}"
+              f" | tiles {mine['peak_crop_tiles']}/{theirs['peak_crop_tiles']}"
+              f" | animales {mine['peak_animals']}/{theirs['peak_animals']}"
+              f" | sells {mine['sells']}/{theirs['sells']}"
+              f" | hires {mine['hires']}/{theirs['hires']}")
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
