@@ -32,6 +32,9 @@ Two engine facts this module depends on, both easy to get backwards:
     silently feeds nothing.
 """
 
+import json
+from pathlib import Path
+
 from kaggle_environments.envs.kaggriculture.kaggriculture import (
     ANIMALS,
     CROPS,
@@ -778,3 +781,31 @@ def make_agent(plan):
         return agent(obs)
 
     return _agent
+
+
+def default_plan():
+    """The revision-3 vector this consumer is measured on, read from the repo.
+
+    A missing or malformed file raises ``PlanError`` naming the path instead of
+    leaving the module importable without a plan: ``load_agent`` would then report
+    the failure as "does not expose a callable agent(obs)", which points at the
+    wrong thing entirely.
+    """
+    path = (Path(__file__).resolve().parents[3] / "plans"
+            / "planner-author-rev3-opus.json")
+    try:
+        plan = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PlanError(f"cannot read the default plan at {path}: {exc}") from exc
+    return validate_plan(plan)
+
+
+#: The plan the module-level ``agent`` runs. ``kaggriculture.loading`` needs a
+#: top-level ``agent(obs)`` to load a file at all (``scripts/benchmark.py``, the
+#: Kaggle runner), and this module is the plan CONSUMER: the plan is its input, so
+#: the default is the revision-3 vector authored for it, read from the repo instead
+#: of copied here. A second copy of a plan vector is a second thing to keep true.
+DEFAULT_PLAN = default_plan()
+
+#: Default plan, default board: what this consumer is measured on.
+agent = make_agent(DEFAULT_PLAN)
