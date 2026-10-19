@@ -9,3 +9,16 @@ __pycache__/
 
 # Third-party reference data (downloaded via kaggle CLI; see README)
 data/
+
+# Generated artifacts: corpora, model output and per-episode scratch.
+# This is ~28 GB of regenerable material; never version it.
+scratch/
+
+# Raw episode logs (100+ MB of API JSON dumps)
+docs/logs/
+
+# Local Pi tooling state
+.codegraph/
+.pi-lens.json
+.playwright-cli/
+settings.json

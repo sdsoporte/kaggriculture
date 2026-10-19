@@ -1,0 +1,17 @@
+{
+  "id": "ser8147/kaggriculture-arena",
+  "title": "Kaggriculture Arena",
+  "code_file": "kaggriculture-arena.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_internet": "true",
+  "machine_shape": "",
+  "dataset_sources": [
+    "ser8147/kaggriculture-agents",
+    "raykkretzschmar/kaggriculture-reference-agents"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

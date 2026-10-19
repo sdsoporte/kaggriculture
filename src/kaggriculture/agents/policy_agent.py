@@ -137,8 +137,11 @@ from kaggle_environments.envs.kaggriculture.kaggriculture import (
     ANIMALS,
     CROPS,
     LAND_PRICES,
+    MARKET_I0,
     MARKET_PARAMS,
     PRODUCTS,
+    SHOPS,
+    TOWN_CENTER_PRODUCTS,
 )
 
 from kaggriculture.agents.param_agent import (
@@ -205,6 +208,10 @@ _P_FEED = -1
 _P_WATER_URGENT = 1
 _P_CARE = 1
 _P_PLACE = 1
+#: FERTILIZE shares the water-due tier (PA3): the bonus is spent by the next water,
+#: so the fertilizer has to land before the water it boosts. Only a unit CARRYING
+#: fertilizer can take the job, so it cannot displace a crop action.
+_P_FERTILIZE = 1
 #: COLLECT_FERTILIZER runs at the care tier, not PA1's tier 5. The chain is one tour
 #: per animal per day, and a unit standing on the animal it just cared for has to be
 #: able to finish the tour: at tier 5 any distant PLANT outranked the collect, so the
@@ -221,11 +228,13 @@ _P_DROP = 0
 _P_CARRY_LATE = 0  # a carried load is lost at the final step, not dropped at midnight
 
 #: Verbs a unit may be asked to perform. The board is the ONLY place a unit action
-#: is chosen, so this is the whole action vocabulary of this agent.
+#: is chosen, so this is the whole action vocabulary of this agent. PA3 moves the
+#: PA2 boundary and adds ``FERTILIZE`` (the fertilizer program is plan-gated).
 UNIT_VERBS = frozenset({
     "PLANT", "WATER", "HARVEST", "DIG", "DROP", "PICKUP", "PASS",
     "NORTH", "SOUTH", "EAST", "WEST",
     "BUILD_COOP", "BUILD_PASTURE", "PLACE", "FEED", "CARE", "COLLECT_FERTILIZER",
+    "FERTILIZE",
 })
 
 #: The engine's animal vocabulary, derived rather than retyped.
@@ -233,6 +242,194 @@ SPECIES = tuple(ANIMALS)
 STRUCTURE_OF = {animal: data["structure"] for animal, data in ANIMALS.items()}
 BUILD_VERB = {animal: ("BUILD_COOP" if data["structure"] == "COOP" else "BUILD_PASTURE")
               for animal, data in ANIMALS.items()}
+
+
+# --------------------------------------------------------------------------- #
+# The compact market curve (PA3).
+#
+# ``data/engine-tables/price_curve.csv`` is the full ``market_price(item, inventory)``
+# table: 9 products x 50,001 inventory levels, 6.8 MB. A game agent is baked into
+# a single file that cannot ship a 6.8 MB CSV, and this module must never read a
+# data file at runtime anyway (the runner executes the file, it does not import the
+# package), so the curve is COMPRESSED into a handful of breakpoints per product.
+#
+# The breakpoints are derived by ``derive_curve_breakpoints`` from the CSV itself -
+# never retyped by hand - and embedded below as ``CURVE_BREAKPOINTS``. Between two
+# breakpoints the price is the straight line, rounded to the engine's own integer
+# price. ``curve_price`` therefore reproduces the full CSV to within
+# ``CURVE_TOLERANCE`` dollars everywhere, while the embedded table is ~160 points
+# instead of 450,009 rows (the test regenerates the breakpoints from the CSV and
+# asserts exactly this).
+#
+# The structural inventory knots (0, 10,000 and 50,000) are pinned first because
+# 10,000 is the market's own starting inventory and the point where the formula
+# switches from the scarcity branch to the glut branch; the adaptive refinement then
+# spends its remaining points where the curve actually bends (the small-inventory
+# scarcity side and the run down to the $1 floor).
+# --------------------------------------------------------------------------- #
+
+#: Maximum dollars between the embedded curve and the full CSV, at any inventory.
+CURVE_TOLERANCE = 1
+#: Inventory knots every product's curve shares (the I0 switching point, the ends).
+CURVE_KNOTS = (0, MARKET_I0, 50_000)
+
+
+def _lerp_round(points, inventory):
+    """Linear interpolation over ``points`` (flat ``(inv, price, ...)``), rounded.
+
+    Standalone so ``derive_curve_breakpoints`` can score a candidate table before
+    ``curve_price`` exists; the two share the same arithmetic on purpose.
+    """
+    count = len(points) // 2
+    if count < 2:
+        return max(1, int(round(points[1]))) if count == 1 else 1
+    if inventory <= points[0]:
+        return max(1, int(round(points[1])))
+    if inventory >= points[-2]:
+        return max(1, int(round(points[-1])))
+    lo, hi = 0, count - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if points[2 * mid] <= inventory:
+            lo = mid
+        else:
+            hi = mid
+    x0, y0 = points[2 * lo], points[2 * lo + 1]
+    x1, y1 = points[2 * hi], points[2 * hi + 1]
+    value = y0 + (y1 - y0) * (inventory - x0) / (x1 - x0)
+    return max(1, int(round(value)))
+
+
+def derive_curve_breakpoints(csv_path, tolerance=CURVE_TOLERANCE, max_points=60):
+    """Compress ``price_curve.csv`` into flat ``(inv, price, ...)`` breakpoints.
+
+    This is the BUILD-TIME step, not a runtime dependency: the agent only ever
+    reads the embedded ``CURVE_BREAKPOINTS``. It is kept importable so a test can
+    regenerate the table from the CSV and prove the embedded literals are exactly
+    what the data says rather than a transcription.
+
+    Greedy adaptive refinement: start from the structural knots, then repeatedly
+    split the segment with the largest run of error between the linear chord and the
+    CSV, until every point is within ``tolerance`` dollars or the segment cap is hit.
+    """
+    import csv as _csv
+
+    columns = {}
+    order = []
+    try:
+        with open(csv_path, newline="") as handle:
+            reader = _csv.reader(handle)
+            next(reader, None)
+            for product, inventory, price in reader:
+                prices = columns.setdefault(product, {})
+                if not prices:
+                    order.append(product)
+                prices[int(inventory)] = int(price)
+    except OSError as exc:
+        raise FileNotFoundError(f"price curve table is not readable: {csv_path}") from exc
+
+    table = {}
+    for product in order:
+        by_inventory = columns[product]
+        top = max(by_inventory)
+        values = [by_inventory[index] for index in range(top + 1)]
+        points = [index for index in CURVE_KNOTS if index <= top]
+        if points[-1] != top:
+            points.append(top)
+        while len(points) - 1 < max_points:
+            worst_error, worst_at = tolerance, None
+            for left, right in zip(points, points[1:], strict=False):
+                if right - left <= 1:
+                    continue
+                for inventory in range(left + 1, right):
+                    chord = values[left] + (values[right] - values[left]) \
+                        * (inventory - left) / (right - left)
+                    error = abs(max(1, int(round(chord))) - values[inventory])
+                    if error > worst_error:
+                        worst_error, worst_at = error, inventory
+            if worst_at is None:
+                break
+            points.append(worst_at)
+            points.sort()
+        table[product] = tuple(value for index in points
+                               for value in (index, values[index]))
+    return table
+
+
+#: The embedded compact curve. Regenerate with ``derive_curve_breakpoints``.
+CURVE_BREAKPOINTS = {
+    "WHEAT": (
+        0, 125, 2339, 113, 6450, 85, 7447, 76, 8728, 61, 9488, 48, 9789, 40, 9909, 35,
+        9969, 31, 9993, 28, 10000, 25, 10020, 22, 10730, 19, 50000, 16,
+    ),
+    "CARROT": (
+        0, 46, 7728, 44, 9622, 42, 9866, 41, 9945, 40, 9973, 39, 9990, 38, 10000, 35,
+        10005, 32, 10023, 29, 10158, 20, 10316, 14, 10842, 1, 50000, 1,
+    ),
+    "TOMATO": (
+        0, 1260, 10000, 60, 10001, 57, 10009, 52, 10021, 48, 10093, 35, 10266, 18,
+        10529, 1, 50000, 1,
+    ),
+    "STRAWBERRY": (
+        0, 960, 1233, 907, 1759, 883, 2581, 844, 3666, 789, 4240, 758, 5273, 698, 5935, 656,
+        6263, 634, 7149, 569, 7409, 548, 8096, 487, 8498, 446, 8720, 421, 8932, 395,
+        9159, 364, 9413, 324, 9573, 294, 9747, 254, 9820, 233, 9865, 218, 9933, 189,
+        9953, 178, 9968, 168, 9984, 154, 9996, 137, 9998, 132, 9999, 128, 10000, 120,
+        10062, 1, 50000, 1,
+    ),
+    "MELON": (
+        0, 331, 3786, 327, 5446, 324, 6857, 321, 8581, 314, 9086, 310, 9357, 307, 9746, 299,
+        9818, 296, 9936, 287, 9955, 284, 9982, 276, 9995, 266, 9998, 260, 10000, 250,
+        10012, 249, 10032, 240, 10052, 223, 10071, 200, 10085, 178, 10093, 164, 10112, 125,
+        10129, 84, 10138, 60, 10158, 1, 50000, 1,
+    ),
+    "EGG": (
+        0, 652, 10000, 50, 10002, 48, 10024, 44, 10249, 40, 12542, 36, 24522, 33,
+        50000, 32,
+    ),
+    "MILK": (
+        0, 1029, 648, 1001, 2018, 937, 2623, 907, 3995, 834, 5415, 749, 6274, 691, 6644, 664,
+        7325, 610, 7758, 572, 8308, 518, 8657, 479, 8844, 456, 8995, 436, 9272, 395,
+        9499, 355, 9633, 327, 9788, 287, 9844, 269, 9874, 258, 9936, 230, 9956, 218,
+        9970, 208, 9985, 194, 9995, 179, 9999, 169, 10000, 160, 10076, 1, 50000, 1,
+    ),
+    "WOOL": (
+        0, 279, 3316, 276, 5803, 272, 7381, 268, 8671, 262, 9270, 257, 9486, 254, 9797, 246,
+        9858, 243, 9945, 235, 9961, 232, 9987, 223, 9996, 214, 9997, 212, 9999, 206,
+        10000, 200, 10004, 199, 10012, 192, 10019, 179, 10026, 161, 10032, 141, 10042, 98,
+        10047, 72, 10053, 37, 10057, 11, 10059, 1, 50000, 1,
+    ),
+    "FERTILIZER": (
+        0, 2100, 10000, 100, 10493, 1, 50000, 1,
+    ),
+}
+
+
+def curve_price(item, inventory):
+    """The embedded curve's integer price for ``item`` at ``inventory``.
+
+    Never touches the CSV: this is the whole bake-safe curve surface the agent uses.
+    Unknown products degrade to their engine base price rather than raising, because
+    a malformed market must not take the agent out of a season.
+    """
+    points = CURVE_BREAKPOINTS.get(item)
+    if points is None:
+        return max(1, int(round(_as_float((MARKET_PARAMS.get(item) or {}).get("base", 1)))))
+    return _lerp_round(points, int(inventory))
+
+
+def curve_revenue(item, inventory, quantity):
+    """Revenue from selling ``quantity`` units, one at a time, from ``inventory``.
+
+    The engine quotes every ``SELL`` unit at the PRE-trade inventory and then adds
+    the unit to the market before the next quote, so the fair estimate is the walk
+    down the curve rather than ``quantity * price(inventory)``. The walk is what
+    makes a big dump measurably worse than a metered one.
+    """
+    quantity = max(0, int(quantity))
+    inventory = max(0, int(inventory))
+    return sum(curve_price(item, inventory + offset) for offset in range(quantity))
+
 
 
 # --------------------------------------------------------------------------- #
@@ -372,6 +569,8 @@ class Policy:
     #: market pays because ``_town_consume`` refills demand every 4 steps, and 0.9
     #: gives it back because too much stock then sits in the shed when the price
     #: never comes back (strawberry's glut collapses to $1 by day 20).
+    #: PA3 keeps this field as the PA2-config fallback; ``curve_selling`` (below)
+    #: replaces the fixed ratio with the curve comparison in the default policy.
     sell_floor_ratio = 0.75
     #: Sell everything, floor and cap ignored, from this day on.
     liquidate_day = 28
@@ -460,12 +659,44 @@ class Policy:
     #: herd's whole output.
     collect_fertilizer = True
 
+    # -- PA3: the curve-aware market ---------------------------------------- #
+
+    #: Replace the fixed price floor with the compact-curve comparison. On by
+    #: default; the PA2 config turns it off to reproduce the fixed floor.
+    curve_selling = True
+    #: Carry-risk hysteresis on holding. We sell unless waiting one more day is
+    #: expected to pay more than this fraction; see ``sell_orders``. Calibrated on
+    #: paired seeds (PA3 gate): see the module docstring.
+    sell_hysteresis = 0.05
+    #: Use the opponent-flow estimate to damp selling into a flooding product.
+    radar = True
+    #: Extra patience against a product the opponent is dumping: when the rival adds
+    #: at least ``radar_flood_units`` to a market's inventory, we demand this much MORE
+    #: recovery before selling our own stock into it, because their dump is a finite
+    #: supply whose end the town drain will reveal. Zero disables the damping while
+    #: still reporting the estimate.
+    radar_damp = 0.10
+    #: Units of opponent net flow that count as "flooding" a product.
+    radar_flood_units = 1
+    #: Run the plan's fertilizer program. OFF by default: PA3's paired calibration
+    #: measured spreading fertilizer as a net LOSS against selling it (see the
+    #: docstring), so ``DEFAULT_PLAN`` keeps ``fertilize_tiles`` at 0. The board path
+    #: (BUY_PRODUCT FERTILIZER + FERTILIZE) is implemented and plan-gated so a future
+    #: plan can turn it on.
+    fertilize_program = False
+    #: Fertilizer units bought per turn when the program is on.
+    fertilize_batch = 2
+    #: Fertilizer units kept out of the sell layer while the program is on.
+    fertilize_reserve = 2
+
     FIELDS = ("sell_floor_ratio", "liquidate_day", "shed_pressure", "hires_per_turn",
               "plant_horizon", "plant_grace", "plant_until_hour", "land_margin",
               "land_floor_lead", "land_floor_grace", "land_floor_max_share",
               "seed_budget_share", "carry_from_day", "structure_lead", "feed_batch",
               "feed_priority", "collect_priority", "feed_crew", "place_crew", "feed_days",
-              "animals_per_turn", "animal_buffer", "buy_feed_when_short", "collect_fertilizer")
+              "animals_per_turn", "animal_buffer", "buy_feed_when_short", "collect_fertilizer",
+              "curve_selling", "sell_hysteresis", "radar", "radar_damp", "radar_flood_units",
+              "fertilize_program", "fertilize_batch", "fertilize_reserve")
 
     def __init__(self, **overrides):
         unknown = set(overrides) - set(self.FIELDS)
@@ -484,6 +715,11 @@ class Policy:
 #: The policy the PA1 gate is measured on. Overridable per agent for calibration.
 DEFAULT_POLICY = Policy()
 
+#: Exactly the PA2 market layer: the fixed 0.75 price floor, no opponent radar, no
+#: fertilizer program. The PA3 improvement gate is a paired run of ``DEFAULT_POLICY``
+#: against this, so the PA3 features are the only difference between the two sides.
+PA2_POLICY = Policy(curve_selling=False, radar=False, fertilize_program=False)
+
 
 # --------------------------------------------------------------------------- #
 # State model: rebuilt from every observation, never remembered.
@@ -499,7 +735,7 @@ class FarmState:
     """
 
     __slots__ = ("step", "day", "hour", "money", "unlocked", "tiles", "seeds",
-                 "shed", "inventories", "positions", "prices", "inventory",
+                 "shed", "inventories", "positions", "prices", "inventory", "shops",
                  "hires_today")
 
     def __init__(self, obs):
@@ -533,6 +769,10 @@ class FarmState:
         self.prices = prices if isinstance(prices, dict) else {}
         inventory = market.get("inventory") or {}
         self.inventory = inventory if isinstance(inventory, dict) else {}
+        town = obs.get("town") if isinstance(obs, dict) else None
+        town = town if isinstance(town, dict) else {}
+        shops = town.get("unlocked_shops") or []
+        self.shops = tuple(str(shop) for shop in shops) if isinstance(shops, list) else ()
         self.hires_today = _as_int(farm.get("hires_today", 0))
 
     # -- tiles ---------------------------------------------------------------
@@ -592,6 +832,133 @@ def held_units(state) -> int:
     for index in range(len(state.positions)):
         total += state.carried_units(index)
     return total
+
+
+# --------------------------------------------------------------------------- #
+# The opponent radar (PA3): infer the rival's net market flow from public data.
+#
+# The observation exposes the shared market inventory and the unlocked town shops,
+# so one turn of market movement is completely accounted for except the opponent's
+# own flows:
+#
+#     inventory(t) - inventory(t-1) = opp_net + own_net - town_drain
+#
+# Our own flows are known from the orders we emitted last turn (we track them) and
+# the town's consumption is a pure function of the unlocked shops and the step, so
+# the residual is the opponent. It is exact for products nobody can buy (the town
+# only ever consumes them, and neither farm can), and for WHEAT/FERTILIZER it is
+# still an estimate because the rival's purchases are not observable - which is
+# exactly why the docstring calls it an ESTIMATE and the tests pin the arithmetic
+# on a synthetic sequence with known flows rather than a real episode.
+# --------------------------------------------------------------------------- #
+
+TOWN_SHOP_INTERVAL = 4
+TOWN_CENTER_INTERVAL = 24
+
+
+def shop_weight(item, shops):
+    """Units of ``item`` one shop instance pulls per consumption tick.
+
+    Single-product shops pull twice (the engine's ``multiplier = 2`` rule), which is
+    why YARN_STORE and PET_CAFE are worth double their neighbours to a wool or carrot
+    seller.
+    """
+    weight = 0
+    for shop in shops or ():
+        products = SHOPS.get(shop)
+        if products and item in products:
+            weight += 2 if len(products) == 1 else 1
+    return weight
+
+
+def town_center_units(item, day):
+    """Units the town center pulls at its once-a-day tick (0 for FERTILIZER)."""
+    if item not in TOWN_CENTER_PRODUCTS:
+        return 0
+    if day >= 20:
+        return 4
+    return 2 if day >= 10 else 1
+
+
+def town_drain_per_day(state, item):
+    """Units of ``item`` the town is expected to consume over the next in-game day.
+
+    Six shop ticks (every 4 turns) plus the once-a-day town center tick. This is the
+    recovery the curve-aware seller is comparing against: the market gets scarcer by
+    this much before the next decision, which is what can make holding pay.
+    """
+    shops = state.shops
+    return (TOWN_CENTER_INTERVAL // TOWN_SHOP_INTERVAL) * shop_weight(item, shops) \
+        + town_center_units(item, state.day)
+
+
+def town_drain_at(shops, item, step):
+    """Units of ``item`` consumed at one specific step (for the radar residual)."""
+    drain = 0
+    if step % TOWN_SHOP_INTERVAL == 0:
+        drain += shop_weight(item, shops)
+    if step % TOWN_CENTER_INTERVAL == 0:
+        drain += town_center_units(item, step // TURNS_PER_DAY)
+    return drain
+
+
+def opponent_flow(prev_inventory, prev_shops, prev_step, state, own_flow):
+    """Per-product opponent net market flow (positive = added supply) last turn.
+
+    The arithmetic above, per product: the public inventory delta minus our own net
+    contribution plus the town drain that happened between the two observations.
+    ``own_flow`` is our net contribution (sells minus buys) over that same turn.
+    """
+    estimate = {}
+    for item in PRODUCTS:
+        before = _as_int((prev_inventory or {}).get(item, MARKET_I0))
+        after = _as_int(state.inventory.get(item, MARKET_I0))
+        ours = _as_int((own_flow or {}).get(item, 0))
+        drain = town_drain_at(prev_shops, item, prev_step)
+        estimate[item] = after - before - ours + drain
+    return estimate
+
+
+class Radar:
+    """One season of opponent-flow inference, carried across turns by the agent.
+
+    The board itself is stateless by design (every ``FarmState`` is rebuilt from one
+    observation). The radar is the one deliberate exception: a DELTA needs two
+    observations, so it remembers the previous market snapshot and our own emitted
+    flows, then reports the residual to the sell layer and the trace.
+    """
+
+    __slots__ = ("inventory", "shops", "step", "own")
+
+    def __init__(self):
+        self.inventory = None
+        self.shops = ()
+        self.step = 0
+        self.own = {}
+
+    def observe(self, state):
+        """Infer last turn's opponent flows, then remember this turn's snapshot."""
+        estimate = {}
+        if self.inventory is not None:
+            estimate = opponent_flow(self.inventory, self.shops, self.step, state, self.own)
+        self.inventory = dict(state.inventory)
+        self.shops = tuple(state.shops)
+        self.step = state.step
+        self.own = {}
+        return estimate
+
+    def record(self, orders):
+        """Remember our own net market contribution so next turn can subtract it."""
+        own = {}
+        for order in orders or ():
+            if not order or len(order) < 3:
+                continue
+            verb, item, quantity = order[0], order[1], _as_int(order[2])
+            if verb == "SELL":
+                own[item] = own.get(item, 0) + quantity
+            elif verb == "BUY_PRODUCT":
+                own[item] = own.get(item, 0) - quantity
+        self.own = own
 
 
 # --------------------------------------------------------------------------- #
@@ -918,26 +1285,106 @@ def seed_demand(plan, layout, state, policy=DEFAULT_POLICY):
     return demand
 
 
-def sell_orders(plan, state, policy=DEFAULT_POLICY):
+# --------------------------------------------------------------------------- #
+# The fertilizer program (PA3). Plan-gated: ``fertilize_tiles`` is 0 in the shipped
+# plan because the paired calibration below measured spreading as a net loss against
+# selling the same unit, but the board path is implemented so a plan can turn it on.
+# --------------------------------------------------------------------------- #
+
+def fertilize_crops(plan, policy=DEFAULT_POLICY):
+    """The crops whose plan entry asks for fertilizer, empty when the program is off."""
+    if not policy.fertilize_program:
+        return frozenset()
+    return frozenset(entry["crop"] for entry in plan["crops"]
+                     if _as_int(entry.get("fertilize_tiles", 0)) > 0)
+
+
+def fertilize_due(cell, crop, day):
+    """Whether a planted tile is inside the window where fertilizer still pays.
+
+    The engine's bonus is spent by the NEXT water: a fertilized water banks +1 extra
+    unit (non-ongoing) or makes an ongoing production day pay double. So the tile is
+    fertilized just before its first paying day and not again while the coverage is
+    live (``fertilized_until_day`` covers three days).
+    """
+    if not isinstance(cell, dict) or cell.get("kind") != "PLANT":
+        return False
+    if _as_int(cell.get("fertilized_until_day", -1)) >= day:
+        return False
+    data = CROPS.get(crop)
+    if not data:
+        return False
+    age = day - _as_int(cell.get("planted_day", day), day)
+    if data["ongoing"]:
+        return data["first_yield_day"] - 2 <= age <= data["max_yield_day"] + 1
+    window_start = (data["max_yield_day"] + 1) // 2
+    return window_start - 1 <= age <= data["max_yield_day"]
+
+
+def fertilize_shortfall(plan, layout, state, herd, policy=DEFAULT_POLICY):
+    """Fertilizer this turn should buy to run the plan's spreading program.
+
+    Small on purpose: the plan's ``fertilize_tiles`` is a tile budget, not a quantity,
+    so the program buys a batch and lets the shed's own production (the herd's daily
+    collect) carry the rest.
+    """
+    if not fertilize_crops(plan, policy):
+        return 0
+    carried = sum(max(0, _as_int(state.carried(index).get("FERTILIZER", 0)))
+                  for index in range(len(state.positions)))
+    in_shed = max(0, _as_int(state.shed.get("FERTILIZER", 0))) - policy.fertilize_reserve
+    return max(0, policy.fertilize_batch - in_shed - carried)
+
+
+def curve_says_sell(item, state, quantity, policy=DEFAULT_POLICY, opp_flow=0):
+    """Whether the compact curve makes selling ``quantity`` now better than holding.
+
+    ``revenue-now`` walks the curve from the live market inventory (the engine prices
+    every sold unit at the pre-sale inventory). ``expected-hold`` walks the same curve
+    from the inventory left after the town drains for a day, which is the market's own
+    recovery. We sell unless that recovery is expected to beat the carry-risk
+    hysteresis, and a rival that is FLOODING the product buys extra patience on top:
+    their dump is finite supply, so we would rather let the drain clear it than add
+    our own units into the low price it created.
+    """
+    inventory = max(0, _as_int(state.inventory.get(item, MARKET_I0)))
+    hold_inventory = max(0, inventory - town_drain_per_day(state, item))
+    now = curve_revenue(item, inventory, quantity)
+    hold = curve_revenue(item, hold_inventory, quantity)
+    patience = policy.sell_hysteresis
+    if policy.radar and opp_flow >= policy.radar_flood_units and policy.radar_damp > 0:
+        patience = max(0.0, patience - policy.radar_damp)
+    return now * (1.0 + patience) >= hold
+
+
+def sell_orders(plan, state, policy=DEFAULT_POLICY, radar=None, note=None):
     """Metered sells: at most one order per product, quantity = what is held.
 
     The engine prices a SELL one unit at a time against the live inventory, so the
     chunk size does not change the revenue of a turn; what the chunk size and the
-    floor DO change is when the goods leave. ``_town_consume`` drains the market
-    every 4 steps per unlocked shop, so a flooded price recovers and holding can be
-    worth it - except that a full shed DELETES its overflow at the midnight drop,
-    which is why shed pressure overrides the floor.
+    sell DECISION DO change is when the goods leave. ``_town_consume`` drains the
+    market every 4 steps per unlocked shop, so a flooded price recovers and holding
+    can be worth it - except that a full shed DELETES its overflow at the midnight
+    drop, which is why shed pressure overrides every timing rule.
 
-    PA2 adds the one product this farm will not sell: WHEAT, minus the herd's feed.
-    Every animal eats 1 wheat a day and ``FEED`` reads the WORKER's inventory, so the
-    wheat has to be in the shed for a unit to pick it up; selling it was measured to
-    starve a whole herd the moment the placement landed. The reserve is
-    ``feed_days`` of the herd the farm OWNS (the ``param_agent`` lesson), not of the
-    animals unfed right now.
+    PA3 replaces the fixed ``sell_floor_ratio`` with the curve comparison
+    (``curve_says_sell``): the hold revenue is the curve AFTER a day of town drain,
+    so the seller holds exactly when the market is expected to recover by more than
+    the carry-risk hysteresis, instead of holding on an absolute price threshold.
+    The opponent radar damps the sell into a product a rival is dumping.
+
+    The one product this farm never sells is WHEAT, minus the herd's feed. Every
+    animal eats 1 wheat a day and ``FEED`` reads the WORKER's inventory, so the wheat
+    has to be in the shed for a unit to pick it up; selling it was measured to starve
+    a whole herd the moment the placement landed. The reserve is ``feed_days`` of the
+    herd the farm OWNS (the ``param_agent`` lesson), not of the animals unfed right
+    now. PA3 adds a fertilizer reserve when the plan runs the spreading program.
     """
+    note = note or (lambda *event: None)
+    radar = radar or {}
     cap = plan["market"]["sell_chunk_cap"]
-    liquidate = (state.day >= policy.liquidate_day
-                 or held_units(state) >= policy.shed_pressure)
+    pressure = held_units(state) >= policy.shed_pressure
+    liquidate = state.day >= policy.liquidate_day or pressure
     reserve = {}
     herd = herd_size(state)
     if herd > 0 and policy.feed_days > 0:
@@ -950,18 +1397,36 @@ def sell_orders(plan, state, policy=DEFAULT_POLICY):
         # herd starved with 52 wheat on the farm.
         reserve["WHEAT"] = max(policy.feed_days * herd,
                                policy.feed_crew * policy.feed_batch)
-    orders = []
+    if policy.fertilize_program and policy.fertilize_reserve > 0:
+        reserve["FERTILIZER"] = policy.fertilize_reserve
+    timed = []
     for item in PRODUCTS:
         held = max(0, _as_int(state.shed.get(item, 0))) - reserve.get(item, 0)
         if held <= 0:
             continue
-        if not liquidate:
-            params = MARKET_PARAMS.get(item) or {}
-            base = _as_float(params.get("base", 0.0))
-            if state.price(item) < base * policy.sell_floor_ratio:
-                continue
         quantity = held if (cap <= 0 or liquidate) else min(cap, held)
+        estimate = _as_int(radar.get(item, 0))
+        if not liquidate:
+            if policy.curve_selling:
+                if not curve_says_sell(item, state, quantity, policy, estimate):
+                    continue
+            else:
+                base = _as_float((MARKET_PARAMS.get(item) or {}).get("base", 0.0))
+                if state.price(item) < base * policy.sell_floor_ratio:
+                    continue
+        # A limited slot budget should go to the products no rival is flooding: the
+        # flooded one is precisely the one whose price is low for someone else's
+        # reason, so it waits for the drain (the radar's "prefer other products").
+        flooded = policy.radar and estimate >= policy.radar_flood_units
+        timed.append((flooded, item, quantity))
+    # Stable sort: non-flooded products first, but the product order itself is
+    # preserved so a PA2-config run (no radar, nothing flooded) keeps PA2's own slot
+    # order exactly - the engine's order cap makes that order observable.
+    timed.sort(key=lambda row: row[0])
+    orders = []
+    for flooded, item, quantity in timed:
         orders.append(["SELL", item, quantity])
+        note("sell", state.day, state.step, item, quantity, state.price(item), flooded)
     return orders
 
 
@@ -1045,7 +1510,7 @@ def animal_orders(plan, layout, state, herd, policy=DEFAULT_POLICY, cash=0.0, bu
     return orders, cash
 
 
-def market_orders(plan, layout, state, policy=DEFAULT_POLICY, note=None):
+def market_orders(plan, layout, state, policy=DEFAULT_POLICY, note=None, radar=None):
     """Build this turn's market orders. Never more than the engine reads.
 
     Slot order is processing order, so this is cash order - and in PA2 it is also the
@@ -1058,8 +1523,9 @@ def market_orders(plan, layout, state, policy=DEFAULT_POLICY, note=None):
       4. **the feed shortfall**, when the shed cannot cover the herd - feeding the
          animals already owned outranks buying more of them, and an escaped animal
          never comes back,
-      5. **animals**, inside ``animal_floor`` and the hire reserve,
-      6. **hires**, to the plan's roster curve, exempt from the land floor.
+      5. **fertilizer**, when the plan runs the spreading program (PA3),
+      6. **animals**, inside ``animal_floor`` and the hire reserve,
+      7. **hires**, to the plan's roster curve, exempt from the land floor.
 
     Hires come last on purpose: the land and seed slots above them have a hard
     deadline in the season, while labour can make its way back on the next turn -
@@ -1078,13 +1544,12 @@ def market_orders(plan, layout, state, policy=DEFAULT_POLICY, note=None):
     hire_slots = max(0, min(hand_target_for_day(plan, state.day) - state.roster,
                             policy.hires_per_turn))
     shared = MAX_ORDERS - hire_slots
-    for order in sell_orders(plan, state, policy):
+    for order in sell_orders(plan, state, policy, radar, note):
         if len(orders) >= shared:
             break
         orders.append(order)
         # Quoted at the pre-sale price: the estimate only over-states income.
         cash += order[2] * state.price(order[1])
-        note("sell", state.day, state.step, order[1], order[2], state.price(order[1]))
 
     paid = max(0, len(state.unlocked) - 1)
     buy_days = plan["land"]["buy_days"]
@@ -1118,6 +1583,16 @@ def market_orders(plan, layout, state, policy=DEFAULT_POLICY, note=None):
         cash -= short * state.price("WHEAT")
         note("feed_buy", state.day, state.step, short, state.price("WHEAT"))
 
+    # PA3: the fertilizer program, plan-gated. One metered order, paid out of the
+    # same cash as everything else, and no purchase at all when the plan asks for
+    # zero tiles. The herd's own collect supplies most of it in practice.
+    fertilize = fertilize_shortfall(plan, layout, state, herd, policy)
+    if fertilize > 0 and len(orders) < shared and state.shed_room >= fertilize \
+            and cash - policy.animal_buffer >= fertilize * state.price("FERTILIZER"):
+        orders.append(["BUY_PRODUCT", "FERTILIZER", fertilize])
+        cash -= fertilize * state.price("FERTILIZER")
+        note("fertilizer_buy", state.day, state.step, fertilize, state.price("FERTILIZER"))
+
     if len(orders) < shared:
         buys, cash = animal_orders(plan, layout, state, herd, policy, cash, build)
         for order in buys:
@@ -1148,7 +1623,7 @@ def market_orders(plan, layout, state, policy=DEFAULT_POLICY, note=None):
 # --------------------------------------------------------------------------- #
 
 def tile_job(cell, crop, day, seeds, hour, plantable, policy=DEFAULT_POLICY,
-             structure=None, build=False):
+             structure=None, build=False, fertilize=False):
     """The job this tile offers right now, or None.
 
     Returns ``(kind, priority, payload, needs)``: ``needs`` is the item the unit has
@@ -1227,6 +1702,12 @@ def tile_job(cell, crop, day, seeds, hour, plantable, policy=DEFAULT_POLICY,
         boost = water_boosts_harvest(cell, day)
         if harvest_due(cell, day, here) and not boost:
             return ("HARVEST", _P_HARVEST, None, None)
+        # FERTILIZE before the water it is meant to boost: the engine spends the
+        # coverage on the next watered day, so applying it after the water wastes the
+        # bonus. The job needs FERTILIZER in hand (see ``needs``), which is also what
+        # keeps a non-carrier from being pulled off its crop work.
+        if fertilize and fertilize_due(cell, here, day):
+            return ("FERTILIZE", _P_FERTILIZE, None, "FERTILIZER")
         if needs_water(cell, day, here):
             # Two different jobs share the WATER verb, and they get the SAME tier.
             # ``water_is_urgent`` is the spec's water-due case: the plant is
@@ -1248,9 +1729,10 @@ def tile_job(cell, crop, day, seeds, hour, plantable, policy=DEFAULT_POLICY,
     return None  # an empty structure nobody reserved is not ours
 
 
-def board_jobs(layout, state, seeds, policy=DEFAULT_POLICY, herd=None):
+def board_jobs(layout, state, seeds, policy=DEFAULT_POLICY, herd=None, fertilize=None):
     """Every job on the board this turn: ``[(priority, tile, kind, payload, needs)]``."""
     herd = read_herd(layout, state) if herd is None else herd
+    fertilize = fertilize_crops(layout.plan, policy) if fertilize is None else fertilize
     build_tiles = set()
     for species, count in build_want(herd, policy).items():
         build_tiles.update(herd.unbuilt[species][:count])
@@ -1263,7 +1745,8 @@ def board_jobs(layout, state, seeds, policy=DEFAULT_POLICY, herd=None):
                            structure=layout.structure_of[tile], build=tile in build_tiles)
         else:
             job = tile_job(state.cell(tile), crop, state.day, seeds.get(crop, 0),
-                           state.hour, layout.plantable(crop, state.day), policy)
+                           state.hour, layout.plantable(crop, state.day), policy,
+                           fertilize=crop in fertilize)
         if job is None:
             continue
         kind, priority, payload, needs = job
@@ -1300,10 +1783,10 @@ def _shed_distance(pos, sheds):
     return min(_distance(pos, tile) for tile in sheds)
 
 
-def fetch_plan(state, herd, policy=DEFAULT_POLICY):
+def fetch_plan(state, herd, policy=DEFAULT_POLICY, wanted_needs=None):
     """Which units walk to the shed this turn, and what they carry back.
 
-    Two chains need a shed trip and neither of them is a tile job, because the
+    Three chains need a shed trip and none of them is a tile job, because the
     engine reads the WORKER's inventory rather than the tile's:
 
       * ``FEED`` needs wheat in the worker's hand, so the crew is sized from the
@@ -1311,10 +1794,12 @@ def fetch_plan(state, herd, policy=DEFAULT_POLICY):
         feeding progresses, because a unit holding wheat already counts as a
         carrier);
       * ``PLACE`` needs the animal itself - ``BUY_ANIMAL`` only puts it in the shed -
-        so an animal that has a place to stand gets a unit to fetch it.
+        so an animal that has a place to stand gets a unit to fetch it;
+      * ``FERTILIZE`` (PA3) needs fertilizer in the worker's hand, so a unit is sent
+        for a batch while the program has a tile waiting.
 
     Units are chosen nearest-to-the-shed first, in index order for ties, and a unit
-    already carrying a fed batch or an animal is not re-tasked.
+    already carrying a fed batch, an animal or fertilizer is not re-tasked.
     """
     positions = state.positions
     sheds = shed_access_tiles()
@@ -1326,6 +1811,7 @@ def fetch_plan(state, herd, policy=DEFAULT_POLICY):
     # animal it was already carrying the wheat for).
     busy = {index for index in range(len(positions))
             if _as_int(state.carried(index).get("WHEAT", 0)) > 0
+            or _as_int(state.carried(index).get("FERTILIZER", 0)) > 0
             or any(_as_int(state.carried(index).get(species, 0)) > 0 for species in SPECIES)}
     plan = {}
     # Size the trips by the wheat the herd still NEEDS, measured in units: a unit
@@ -1361,6 +1847,18 @@ def fetch_plan(state, herd, policy=DEFAULT_POLICY):
             busy.add(index)
             pending -= 1
             budget -= 1
+    # The fertilizer chain (PA3): only worth a trip when the plan's program has a
+    # tile waiting AND the shed actually holds the units.
+    if "FERTILIZER" in (wanted_needs or ()) and policy.fertilize_program:
+        available = max(0, _as_int(state.shed.get("FERTILIZER", 0)))
+        carriers = sum(1 for index in range(len(positions))
+                       if _as_int(state.carried(index).get("FERTILIZER", 0)) > 0)
+        for _ in range(min(available, max(0, 3 - carriers))):
+            index = next((i for i in order if i not in busy), None)
+            if index is None:
+                break
+            plan[index] = ("FERTILIZER", 1)
+            busy.add(index)
     return plan
 
 
@@ -1387,7 +1885,7 @@ def unit_actions(layout, state, policy=DEFAULT_POLICY, note=None):
     claimed = set()
     actions = []
     unit_sectors = sectors(layout, state, state.positions)
-    fetches = fetch_plan(state, herd, policy)
+    fetches = fetch_plan(state, herd, policy, wanted)
     for index, pos in enumerate(state.positions):
         if pos is None:
             actions.append(["PASS"])
@@ -1452,7 +1950,7 @@ def unit_actions(layout, state, policy=DEFAULT_POLICY, note=None):
             if kind in ("PLANT", "WATER", "HARVEST", "DIG"):
                 note(kind.lower(), target, payload, state.day)
             elif kind in ("FEED", "CARE", "PLACE", "COLLECT_FERTILIZER",
-                          "BUILD_COOP", "BUILD_PASTURE"):
+                          "BUILD_COOP", "BUILD_PASTURE", "FERTILIZE"):
                 note(kind.lower(), target, state.day)
             elif kind == "PICKUP":
                 note("pickup", target, payload, state.day)
@@ -1531,6 +2029,8 @@ class PolicyAgent:
         self.enabled = bool(enabled)
         self.trace = [] if trace is None else trace
         self.crashes = 0
+        #: The one piece of cross-turn state: a delta needs two observations.
+        self.radar = Radar()
 
     def _note(self, *event):
         self.trace.append(event)
@@ -1549,7 +2049,13 @@ class PolicyAgent:
 
     def _decide(self, obs):
         state = read_state(obs)
-        orders = market_orders(self.plan, self.layout, state, self.policy, self._note)
+        radar = self.radar.observe(state) if self.policy.radar else {}
+        for item, estimate in radar.items():
+            if estimate:
+                self._note("radar", state.day, state.step, item, estimate)
+        orders = market_orders(self.plan, self.layout, state, self.policy, self._note,
+                               radar)
+        self.radar.record(orders)
         farmer, hands = unit_actions(self.layout, state, self.policy, self._note)
         return {"farmer": farmer, "hands": hands, "market": orders}
 
@@ -1563,10 +2069,11 @@ def make_agent(plan=None, policy=None, enabled=True, trace=None) -> Callable:
 
     ``enabled=False`` is the byte-clean control (see ``_fallback_action``). Pass a
     list as ``trace=`` to collect the structural evidence the tests assert on:
-    ``sell`` / ``land`` / ``seed`` / ``hire`` / ``animal`` / ``feed_buy`` / ``act`` /
-    ``plant`` / ``water`` / ``harvest`` / ``dig`` / ``drop`` / ``carry`` / ``pickup`` /
-    ``feed`` / ``care`` / ``place`` / ``build_coop`` / ``build_pasture`` /
-    ``collect_fertilizer`` / ``crash`` events.
+    ``sell`` / ``land`` / ``seed`` / ``hire`` / ``animal`` / ``feed_buy`` /
+    ``fertilizer_buy`` / ``radar`` / ``act`` / ``plant`` / ``water`` / ``harvest`` /
+    ``dig`` / ``drop`` / ``carry`` / ``pickup`` / ``feed`` / ``care`` / ``place`` /
+    ``build_coop`` / ``build_pasture`` / ``collect_fertilizer`` / ``fertilize`` /
+    ``crash`` events.
     """
     policy_agent = PolicyAgent(plan=plan, policy=policy, enabled=enabled, trace=trace)
 
